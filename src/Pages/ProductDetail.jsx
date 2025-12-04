@@ -168,7 +168,7 @@ const ProductDetail = () => {
     dist: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
   });
 
-  const [showReviewModal, setShowReviewModal] = useState(false); // Fixed: Changed from showModal
+  const [showReviewModal, setShowReviewModal] = useState(false);
 
   /* DESCRIPTION FIX */
   const fullDescription =
@@ -249,22 +249,24 @@ const ProductDetail = () => {
 
     // process loaded product data into local shape
     const processLoadedProduct = async (data) => {
-      // build image list from imageUrls and mainImageUrl
+      // build image list from imageUrls ONLY - completely ignore mainImageUrl
       const list = [];
       const colorMap = {}; // color -> first index
+      const mainImageUrl = data.mainImageUrl || "";
+      
+      // Only use gallery images that are NOT the main image
       if (Array.isArray(data.imageUrls)) {
         data.imageUrls.forEach(item => {
-          if (item && item.url) {
+          if (item && item.url && item.url !== mainImageUrl) { // Skip main image
             colorMap[item.color] = colorMap[item.color] ?? list.length;
             list.push(item.url);
           }
         });
       }
-      if (data.mainImageUrl && !list.includes(data.mainImageUrl)) {
-        list.unshift(data.mainImageUrl);
-      }
-
-      // fallback placeholder
+      
+      // DO NOT add mainImageUrl at all - only use non-main gallery images
+      
+      // fallback placeholder - only if gallery has no images
       if (list.length === 0) list.push("https://via.placeholder.com/600x400?text=No+Image");
 
       // variants normalization
@@ -285,7 +287,7 @@ const ProductDetail = () => {
 
       // set states
       setImages(list);
-      setCurrentImg(list[0]);
+      setCurrentImg(list.length > 0 ? list[0] : "https://via.placeholder.com/600x400?text=No+Image");
       setSelectedColor(defaultColor);
       setSelectedSize(defaultSize);
       setVariant(chosenVariant);
@@ -298,7 +300,7 @@ const ProductDetail = () => {
         sku: data.sku || "",
         sellerId: data.sellerId || data.selterId || "unknown",
         imageUrls: data.imageUrls || [],
-        mainImageUrl: data.mainImageUrl || list[0],
+        mainImageUrl: "", // Set to empty string
         variants,
         colors,
         sizes,
@@ -420,7 +422,7 @@ const ProductDetail = () => {
       variantId: variant.variantId ?? variant.variant_id ?? null,
       selectedColor,
       selectedSize,
-      image: currentImg || product.mainImageUrl,
+      image: currentImg || product.imageUrls[0]?.url || "", // Use currentImg first, fallback to first gallery image
       stock: variant.stock ?? 0,
     };
     addToCart(item);

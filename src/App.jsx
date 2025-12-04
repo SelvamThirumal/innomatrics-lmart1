@@ -40,6 +40,7 @@ import FAQs from './components/FAQs';
 // 👇 NEW PAGE IMPORTS 👇
 import MyOrders from './Pages/MyOrders'; 
 import ReturnOrderForm from './Pages/ReturnOrderForm'; 
+import Oldee from './Pages/Oldee'; // <-- ADDED: Import the new Oldee page
 // 👆 NEW PAGE IMPORTS 👆
 
 const App = () => {
@@ -84,6 +85,10 @@ const App = () => {
                       <Route path="/e-market" element={<EMarket />} />
                       <Route path="/local-market" element={<LocalMarket />} />
                       <Route path="/news-today" element={<NewsToday />} />
+                      
+                      {/* 👇 NEW OLDEE ROUTE 👇 */}
+                      <Route path="/oldee" element={<Oldee />} /> 
+                      {/* 👆 NEW OLDEE ROUTE 👆 */}
 
                       <Route path="/login" element={<UserLogin />} />
                       <Route path="/register" element={<UserRegister />} />
