@@ -766,14 +766,7 @@ const Home = () => {
       {/* Premium Bestsellers */}
       <div className="py-8 bg-gray-50">
         <div className="container-responsive">
-          <div className="text-center mb-6">
-            <h2 className="text-3xl font-bold text-gray-900 mb-4 animate-fade-in">
-              Premium Bestsellers
-            </h2>
-            <p className="text-lg text-gray-600 animate-slide-up">
-              Our most loved and highly-rated printing services
-            </p>
-          </div>
+         
 
           {/* Products Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 md:gap-6">
@@ -861,70 +854,7 @@ const Home = () => {
         </div>
       </div>
 
-      {/* Posters Section */}
-      <div className="py-8 bg-white">
-        <div className="container-responsive">
-          <div className="text-center mb-6">
-            <h2 className="text-3xl font-bold text-gray-900 mb-4 animate-fade-in">
-              Featured Posters
-            </h2>
-            <p className="text-lg text-gray-600 animate-slide-up">
-              Latest promotional materials and announcements
-            </p>
-          </div>
-
-          {postersLoading ? (
-            <div className="flex justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-            </div>
-          ) : posters.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-              {posters.map((poster) => (
-                <div 
-                  key={poster.id} 
-                  className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-all duration-300 transform hover:scale-105"
-                >
-                  {/* Poster Image */}
-                  <div className="relative h-48">
-                    <img
-                      src={poster.imageUrl}
-                      alt={poster.title}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        console.log('Poster image failed to load:', poster.title);
-                        e.target.src = 'https://placehold.co/400x300?text=Poster+Image';
-                      }}
-                    />
-                  </div>
-                  
-                  {/* Poster Info */}
-                  <div className="p-4">
-                    <h3 className="font-semibold text-gray-900 mb-2 text-lg truncate">
-                      {poster.title}
-                    </h3>
-                    
-                    <div className="flex items-center justify-between text-sm text-gray-500 mb-3">
-                      <span>Posted: {poster.formattedDate || poster.date || formatPosterDate(poster.createdAt)}</span>
-                      <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">
-                        B2B
-                      </span>
-                    </div>
-                    
-                    <div className="text-xs text-gray-400">
-                      ID: {poster.posterId || poster.id}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <p className="text-gray-500">No posters available at the moment.</p>
-            </div>
-          )}
-        </div>
-      </div>
-
+    
       {/* Image Gallery Section */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-6 max-w-6xl mx-auto">
         {/* Left big image with text overlay */}

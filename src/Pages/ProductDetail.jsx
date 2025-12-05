@@ -403,6 +403,25 @@ const ProductDetail = () => {
   const decrement = () => {
     if (quantity > 1) setQuantity(q => q - 1);
   };
+  
+  // NEW: Handler for manual quantity change
+  const handleQuantityChange = (e) => {
+    let value = Number(e.target.value);
+    const max = variant?.stock ?? Infinity;
+
+    // 1. Ensure it's a number and at least 1
+    if (isNaN(value) || value < 1) {
+      value = 1;
+    }
+    // 2. Clamp it at the maximum stock (optional: only set if it's a valid integer)
+    if (value > max) {
+      value = max;
+      alert(`Max available: ${max}`);
+    }
+
+    setQuantity(Math.floor(value));
+  };
+
 
   /* -------------------------
      ADD TO CART / BUY NOW
@@ -429,10 +448,21 @@ const ProductDetail = () => {
     alert("Added to cart");
   };
 
+  // UPDATED: No longer calls onAddToCart
   const onBuyNow = () => {
-    onAddToCart();
-    // navigate to checkout after tiny delay to ensure cart updated
-    setTimeout(() => navigate("/checkout"), 400);
+    if (!product || !variant) {
+      alert("Select variant");
+      return;
+    }
+    // Navigate directly to checkout without adding to cart
+    navigate("/checkout", {
+      state: {
+        // You'd typically pass the item details here for the checkout page to use
+        product: product.id,
+        variant: variant.variantId, 
+        quantity: quantity 
+      }
+    });
   };
 
   /* -------------------------
@@ -615,7 +645,15 @@ const ProductDetail = () => {
                 >
                   −
                 </button>
-                <span className="px-5 py-2 border-x">{quantity}</span>
+                {/* MODIFIED: Replaced span with input */}
+                <input
+                  type="number"
+                  value={quantity}
+                  onChange={handleQuantityChange}
+                  className="w-12 text-center py-2 border-x focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  min="1"
+                  max={variant?.stock ?? 99}
+                />
                 <button
                   onClick={increment}
                   className="px-3 py-2 text-gray-700"

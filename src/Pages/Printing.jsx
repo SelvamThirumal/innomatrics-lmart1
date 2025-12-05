@@ -81,6 +81,7 @@ const pickVariant = (product) => {
 // compute displayed price, original price and discount percentage
 const computePriceData = (product) => {
   const variant = pickVariant(product);
+  // Use price from variant first, then product level
   const rawPrice = Number(variant?.price ?? product.price ?? 0);
   const rawOffer = Number(variant?.offerPrice ?? product.offerPrice ?? 0) || 0;
 
@@ -95,29 +96,35 @@ const computePriceData = (product) => {
 const extractMainCategories = (products) => {
   const set = new Set(["All Products"]);
   products.forEach((p) => {
+    // Safely add the category name string
     if (p?.category?.name) set.add(p.category.name);
   });
   return Array.from(set);
 };
 
 // Extract subcategories for a specific main category
+// FIX: Ensure only strings are added to the Set
 const extractSubcategories = (products, mainCategory) => {
   const set = new Set(["All"]);
-  if (mainCategory === "All Products") {
-    // For "All Products", show all subcategories and product tags
-    products.forEach((p) => {
-      if (p?.subCategory) set.add(p.subCategory);
-      if (p?.productTag) set.add(p.productTag);
-    });
-  } else {
-    // For specific main category, show only its subcategories
-    products.forEach((p) => {
-      if (p?.category?.name === mainCategory) {
-        if (p?.subCategory) set.add(p.subCategory);
-        if (p?.productTag) set.add(p.productTag);
-      }
-    });
-  }
+  
+  // Helper to safely extract category/tag name string
+  const getCategoryName = (data) => {
+    if (!data) return null;
+    if (typeof data === 'object' && data.name) return data.name;
+    if (typeof data === 'string') return data;
+    return null; // Ignore invalid types
+  };
+
+  products.forEach((p) => {
+    if (mainCategory === "All Products" || p?.category?.name === mainCategory) {
+      const sub = getCategoryName(p?.subCategory);
+      const tag = getCategoryName(p?.productTag);
+      
+      if (sub) set.add(sub);
+      if (tag) set.add(tag);
+    }
+  });
+  
   return Array.from(set);
 };
 
@@ -139,9 +146,9 @@ const ProductCard = ({ product, addToCart, navigate }) => {
           onError={(e) => (e.currentTarget.src = "https://placehold.co/400x300?text=No+Image")}
         />
         {product.isNew && <span className="absolute top-2 left-2 bg-purple-600 text-white text-xs px-2 py-1 rounded">New!</span>}
-        {product.discount > 0 && (
+        {product.originalPrice > product.price && ( // Check if there's an actual discount
           <span className="absolute top-2 right-2 bg-red-500 text-white text-xs px-2 py-1 rounded">
-            Save ₹{product.originalPrice - product.price}
+            Save ₹{(product.originalPrice - product.price).toFixed(0)}
           </span>
         )}
       </div>
@@ -170,16 +177,21 @@ const ProductCard = ({ product, addToCart, navigate }) => {
         </div>
           
         <div className="flex items-center space-x-2 mb-4">
-          <span className="text-xl font-bold text-gray-900">₹{product.price}</span>
-          {product.originalPrice > 0 && (
-            <span className="text-sm text-gray-400 line-through">₹{product.originalPrice}</span>
+          <span className="text-xl font-bold text-gray-900">₹{product.price.toFixed(0)}</span>
+          {product.originalPrice > 0 && product.originalPrice > product.price && (
+            <span className="text-sm text-gray-400 line-through">₹{product.originalPrice.toFixed(0)}</span>
           )}
         </div>
 
         <button 
           onClick={(e) => { 
             e.stopPropagation(); 
-            addToCart({ ...product, id: product._id || product.id, quantity: 1 }); 
+            // Ensure product sent to cart has the price data computed
+            addToCart({ 
+                ...product, 
+                id: product._id || product.id, 
+                quantity: 1,
+            }); 
           }} 
           className="w-full bg-orange-500 hover:bg-orange-600 text-white py-2 rounded-lg font-medium transition-all duration-300 flex items-center justify-center gap-2"
         >
@@ -203,9 +215,10 @@ const Printing = () => {
   const [selectedMainCategory, setSelectedMainCategory] = useState("All Products");
   const [subCategories, setSubCategories] = useState(["All"]);
   const [selectedSubCategory, setSelectedSubCategory] = useState("All");
-  const [priceRange, setPriceRange] = useState([99, 5000]);
+  const [priceRange, setPriceRange] = useState([99, 25000]);
   const [showFilters, setShowFilters] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [priceMax, setPriceMax] = useState(25000); // New state for max range
 
   // load printing products from Firestore
   useEffect(() => {
@@ -213,7 +226,9 @@ const Printing = () => {
       setLoading(true);
       try {
         const ref = collection(db, "products");
-        const q = query(ref, where("productTag", "==", "Printing"));
+        // NOTE: This filter is based on your requirement for the 'Printing' page.
+        // It specifically queries for products where productTag is "Printing".
+        const q = query(ref, where("productTag", "==", "Printing")); 
         const snap = await getDocs(q);
 
         const mapped = snap.docs.map((doc) => {
@@ -235,12 +250,23 @@ const Printing = () => {
         });
 
         setProducts(mapped);
+        
+        // 1. Set main categories
         const mainCats = extractMainCategories(mapped);
         setMainCategories(mainCats);
         
-        // Extract subcategories for initially selected category
+        // 2. Set subcategories for initially selected category
         const subs = extractSubcategories(mapped, "All Products");
         setSubCategories(subs);
+
+        // 3. Auto-set slider max from max price found
+        const maxFound = Math.max(...mapped.map((p) => Number(p.price || 0)), 25000);
+        // Round up to the nearest thousand for a cleaner slider max
+        const newPriceMax = Math.ceil(maxFound / 1000) * 1000; 
+        setPriceMax(newPriceMax);
+        // Ensure initial range max doesn't exceed new max
+        setPriceRange((prevRange) => [prevRange[0], Math.min(prevRange[1], newPriceMax)]); 
+
       } catch (err) {
         console.error("Error fetching Printing products:", err);
       } finally {
@@ -266,9 +292,11 @@ const Printing = () => {
       selectedMainCategory === "All Products" ||
       cat === selectedMainCategory;
 
-    // Check subcategory
-    const sub = product.subCategory || "";
-    const tag = product.productTag || "";
+    // Check subcategory/tag
+    // We need to handle both string and object forms in the product data for filtering
+    const sub = typeof product.subCategory === 'object' ? product.subCategory.name : (product.subCategory || "");
+    const tag = typeof product.productTag === 'object' ? product.productTag.name : (product.productTag || "");
+
     const subCategoryMatch = 
       selectedSubCategory === "All" ||
       sub === selectedSubCategory ||
@@ -294,7 +322,7 @@ const Printing = () => {
     setPriceRange(copy);
   };
 
-  // small helpers for WhatsApp / call (kept from yours)
+  // small helpers for WhatsApp / call
   const handleWhatsAppClick = () => {
     const phoneNumber = "919880444189";
     const message = "Hello! I am interested in your printing services. Can you provide more information?";
@@ -308,6 +336,7 @@ const Printing = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      
       {/* Hero */}
       <div className="bg-gradient-to-r from-blue-600 to-purple-700 text-white py-16">
         <div className="max-w-7xl mx-auto px-4 text-center">
@@ -365,11 +394,13 @@ const Printing = () => {
           {/* Sidebar */}
           <div className={`w-full lg:w-72 flex-shrink-0 ${showFilters ? "block" : "hidden lg:block"}`}>
             <div className="sticky top-20">
+              
               {/* Subcategories */}
               <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
                 <h3 className="font-semibold text-gray-800 mb-4">Subcategories</h3>
                 <div className="space-y-2">
                   {subCategories.map((subCat) => (
+                    // subCat is guaranteed to be a string here due to the fix in extractSubcategories
                     <div key={subCat} className="flex items-center">
                       <input
                         type="radio"
@@ -380,14 +411,14 @@ const Printing = () => {
                         className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300"
                       />
                       <label htmlFor={`sub-${subCat}`} className="ml-2 text-sm text-gray-700 cursor-pointer">
-                        {subCat}
+                        {subCat} {/* This is now guaranteed to be a string */}
                       </label>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Service Type */}
+              {/* Service Type (Placeholder/Static) */}
               <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
                 <h3 className="font-semibold text-gray-800 mb-4">Service Type</h3>
                 <div className="space-y-2">
@@ -400,60 +431,39 @@ const Printing = () => {
                 </div>
               </div>
 
-              {/* Price Range - SINGLE SLIDER WITH MIN/MAX DISPLAY */}
+              {/* Price Range */}
               <div className="bg-white rounded-lg shadow-sm p-4">
                 <h3 className="font-semibold text-gray-800 mb-4">Price Range</h3>
                 <div className="space-y-4">
-                  {/* Min/Max Price Display */}
-                  <div className="flex items-center justify-between">
-                    <div className="text-center">
-                      <div className="text-xs text-gray-500 mb-1">Min</div>
-                      <div className="text-sm font-medium">₹{priceRange[0]}</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-xs text-gray-500 mb-1">Max</div>
-                      <div className="text-sm font-medium">₹{priceRange[1]}</div>
-                    </div>
+                  <div className="flex items-center justify-between text-sm text-gray-600">
+                    <span>₹ {priceRange[0]}</span>
+                    <span>₹ {priceRange[1]}</span>
                   </div>
-
-                  {/* Single Range Slider Container */}
-                  <div className="relative pt-1">
-                    {/* Min Price Slider */}
-                    <input
-                      type="range"
-                      min="99"
-                      max="25000"
-                      value={priceRange[0]}
-                      onChange={(e) => handlePriceChange(0, e.target.value)}
-                      className="absolute w-full h-2 bg-transparent appearance-none pointer-events-auto z-10"
-                      style={{ WebkitAppearance: 'none' }}
-                    />
-                    {/* Max Price Slider */}
-                    <input
-                      type="range"
-                      min="99"
-                      max="25000"
-                      value={priceRange[1]}
-                      onChange={(e) => handlePriceChange(1, e.target.value)}
-                      className="absolute w-full h-2 bg-transparent appearance-none pointer-events-auto z-20"
-                      style={{ WebkitAppearance: 'none' }}
-                    />
-                    {/* Track Background */}
-                    <div className="h-2 bg-gray-200 rounded-full"></div>
-                    {/* Active Range */}
-                    <div 
-                      className="absolute top-0 h-2 bg-blue-500 rounded-full"
-                      style={{
-                        left: `${((priceRange[0] - 99) / (25000 - 99)) * 100}%`,
-                        width: `${((priceRange[1] - priceRange[0]) / (25000 - 99)) * 100}%`
-                      }}
-                    ></div>
-                  </div>
-
-                  {/* Price Labels */}
-                  <div className="flex justify-between text-xs text-gray-500">
-                    <span>₹99</span>
-                    <span>₹25,000</span>
+                  <div className="space-y-4">
+                    <div>
+                      <span className="text-xs text-gray-500 block mb-1">Min: ₹{priceRange[0]}</span>
+                      <input
+                        type="range"
+                        min="99"
+                        max={priceMax} // Use dynamic max price
+                        step="100"
+                        value={priceRange[0]}
+                        onChange={(e) => handlePriceChange(0, e.target.value)}
+                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-xs text-gray-500 block mb-1">Max: ₹{priceRange[1]}</span>
+                      <input
+                        type="range"
+                        min="99"
+                        max={priceMax} // Use dynamic max price
+                        step="100"
+                        value={priceRange[1]}
+                        onChange={(e) => handlePriceChange(1, e.target.value)}
+                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
