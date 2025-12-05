@@ -734,6 +734,20 @@ const Navbar = () => {
                   Download
                 </button>
               </div>
+              
+              {/* === START: ADDED BECOME A SELLER BUTTON (DESKTOP) === */}
+              {/* ORIGINAL: <Link to="/become-a-seller" ...>
+                  UPDATED: Use <a> tag and absolute URL since it links to a different domain/app.
+              */}
+              <a
+                href="https://lmart-seller.vercel.app/seller/login"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium text-sm transition duration-200 whitespace-nowrap inline-block text-center"
+              >
+                Become a Seller
+              </a>
+              {/* === END: ADDED BECOME A SELLER BUTTON (DESKTOP) === */}
 
               <Link
                 to="/contact"
@@ -908,6 +922,22 @@ const Navbar = () => {
 
               {/* Mobile Action Buttons */}
               <div className="space-y-3">
+                
+                {/* === START: ADDED BECOME A SELLER BUTTON (MOBILE) === */}
+                {/* ORIGINAL: onClick={() => { navigate("/become-a-seller"); setIsMenuOpen(false); }}
+                    UPDATED: Use window.open for absolute URL and external app.
+                */}
+                <button 
+                  onClick={() => {
+                    window.open("https://lmart-seller.vercel.app/seller/login", "_blank");
+                    setIsMenuOpen(false);
+                  }}
+                  className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium text-center"
+                >
+                  💰 Become a Seller
+                </button>
+                {/* === END: ADDED BECOME A SELLER BUTTON (MOBILE) === */}
+                
                 <button 
                   onClick={() => {
                     navigate("/contact");

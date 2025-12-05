@@ -1,953 +1,874 @@
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-// Assuming this context provides cart state and actions
-import { useCart } from "../context/CartContext"; 
+import { useCart } from "../context/CartContext";
 import { db } from '../../firebase'; 
-import { 
-  collection, 
-  addDoc, 
-  doc, 
-  getDoc, 
-  Timestamp,
-  updateDoc,
-  getDocs // Added for AddressManagerModal
-} from "firebase/firestore";
-// Note: useAuth import removed as requested. User ID is fetched from localStorage.
+import { collection, addDoc, doc, getDoc, serverTimestamp } from "firebase/firestore";
 
 // 🔑 REQUIRED: Replace "YOUR_GOOGLE_MAPS_API_KEY_HERE" with your actual Google Maps Geocoding API Key
-// NOTE: Geocoding is an advanced feature and requires a valid, enabled API key.
-const GOOGLE_MAPS_API_KEY = "YOUR_GOOGLE_MAPS_API_KEY_HERE"; 
-
-// =================================================================================
-//                            HELPER COMPONENTS (FOR MODULARITY)
-// =================================================================================
-
-// --- 1. Address Management Modal (for selecting/adding addresses) ---
-const AddressManagerModal = ({ userId, currentAddress, setAddress, onClose }) => {
-    const [addresses, setAddresses] = useState([]);
-    const [newAddressForm, setNewAddressForm] = useState(null); // null, 'add', or 'edit'
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
-
-    const fetchAddresses = useCallback(async () => {
-        if (!userId) return;
-        setLoading(true);
-        try {
-            // Assuming addresses are stored in a subcollection under the user
-            const addressesRef = collection(db, "users", userId, "addresses");
-            const snapshot = await getDocs(addressesRef);
-            const fetchedAddresses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setAddresses(fetchedAddresses);
-        } catch (err) {
-            console.error("Error fetching addresses:", err);
-            setError("Failed to load saved addresses.");
-        } finally {
-            setLoading(false);
-        }
-    }, [userId]);
-
-    useEffect(() => {
-        fetchAddresses();
-    }, [fetchAddresses]);
-    
-    // Placeholder function for saving/updating address
-    const handleSaveNewAddress = async (formData, isNew) => {
-        setLoading(true);
-        setError('');
-        
-        // This is simplified. In a real app, 'formData' would contain all address fields
-        const mockFormData = {
-             name: 'User Name', phone: '9999999999', email: 'a@b.com',
-             fullAddress: '123, Mock Street', pincode: '400001', city: 'Mumbai',
-        };
-
-        try {
-            const addressesRef = collection(db, "users", userId, "addresses");
-            if (isNew) {
-                await addDoc(addressesRef, {
-                    ...mockFormData,
-                    createdAt: Timestamp.now(),
-                    lastUsed: Timestamp.now()
-                });
-                alert('New address saved! (Mock Data used)');
-            } else {
-                const addressDocRef = doc(db, "users", userId, "addresses", formData.id);
-                await updateDoc(addressDocRef, {
-                    ...mockFormData,
-                    lastUsed: Timestamp.now()
-                });
-                alert('Address updated! (Mock Data used)');
-            }
-            setNewAddressForm(null);
-            await fetchAddresses(); 
-        } catch (err) {
-            console.error("Error saving address:", err);
-            setError("Failed to save address.");
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleSelectAddress = (address) => {
-        setAddress({
-            name: address.name,
-            phone: address.phone,
-            email: address.email,
-            address: address.fullAddress, // Assuming field name is fullAddress
-            pincode: address.pincode,
-            city: address.city
-        });
-        onClose();
-    };
-
-    if (newAddressForm) {
-        // Simple form for adding/editing a single address (Placeholder for brevity)
-        return (
-             <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-[100]">
-                <div className="bg-white p-6 rounded-xl w-full max-w-lg shadow-2xl">
-                    <h3 className="text-xl font-bold mb-4">{newAddressForm === 'add' ? 'Add New Address' : 'Edit Address'}</h3>
-                    <p className='text-sm text-red-500 mb-4'>[Placeholder: In a real app, full form inputs would be here to save address data to Firestore.]</p>
-                    {error && <div className="p-2 bg-red-100 text-red-700 rounded mb-4">{error}</div>}
-                    <div className="flex justify-end gap-3">
-                        <button onClick={() => setNewAddressForm(null)} className="px-4 py-2 border rounded-lg hover:bg-gray-100">Cancel</button>
-                        <button onClick={() => handleSaveNewAddress({ /* form data */ }, newAddressForm === 'add')} disabled={loading} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50">
-                            {loading ? 'Saving...' : 'Save Address'}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-    
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-[100]">
-            <div className="bg-white p-6 rounded-xl w-full max-w-2xl shadow-2xl">
-                <div className="flex justify-between items-center mb-4 border-b pb-3">
-                    <h2 className="text-2xl font-bold">Manage Saved Addresses</h2>
-                    <button onClick={onClose} className="text-2xl text-gray-600 hover:text-gray-900">&times;</button>
-                </div>
-                
-                {loading ? (
-                    <div className="text-center py-10 text-lg">Loading addresses...</div>
-                ) : (
-                    <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
-                        {error && <div className="p-3 bg-red-100 text-red-700 rounded">{error}</div>}
-                        
-                        {addresses.length === 0 && <p className="text-gray-500 text-center py-6">No saved addresses found. Please add one below.</p>}
-
-                        {addresses.map(addr => (
-                            <div key={addr.id} className={`p-4 border rounded-lg flex justify-between items-center transition-all ${
-                                addr.id === currentAddress.id ? 'border-purple-600 ring-2 ring-purple-200 bg-purple-50' : 'hover:border-purple-300'
-                            }`}>
-                                <div>
-                                    <p className="font-bold">{addr.name || 'Default Name'}</p>
-                                    <p className="text-sm text-gray-600">{addr.fullAddress || 'N/A'}, {addr.city || 'N/A'} - {addr.pincode || 'N/A'}</p>
-                                    <p className="text-xs text-gray-500">Phone: {addr.phone || 'N/A'}</p>
-                                </div>
-                                <div className="flex gap-2">
-                                    <button onClick={() => handleSelectAddress(addr)} className="px-3 py-1 text-sm bg-green-500 text-white rounded-full hover:bg-green-600">
-                                        Deliver Here
-                                    </button>
-                                    <button onClick={() => setNewAddressForm('edit')} className="px-3 py-1 text-sm text-purple-600 border border-purple-300 rounded-full hover:bg-purple-50">
-                                        Edit
-                                    </button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                <div className="mt-6 border-t pt-4">
-                    <button onClick={() => setNewAddressForm('add')} className="w-full py-2 border-2 border-dashed border-purple-300 text-purple-600 rounded-lg hover:bg-purple-50 font-semibold">
-                        + Add New Shipping Address
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// --- 2. Coupon Input Component ---
-const CouponInput = ({ total, setDiscount, setDiscountApplied }) => {
-    const [couponCode, setCouponCode] = useState('');
-    const [couponStatus, setCouponStatus] = useState({ message: '', type: '' }); // 'success', 'error', ''
-    const [applying, setApplying] = useState(false);
-
-    // Placeholder for actual coupon validation logic
-    const validateCoupon = useCallback(async (code) => {
-        setApplying(true);
-        await new Promise(resolve => setTimeout(resolve, 800)); 
-        
-        const upperCode = code.toUpperCase().trim();
-        
-        if (upperCode === 'FLAT100' && total >= 500) {
-            setDiscount(100);
-            setDiscountApplied(true);
-            setCouponStatus({ message: 'Coupon applied! ₹100 deducted.', type: 'success' });
-        } else if (upperCode === 'DIWALI20' && total >= 1000) {
-            const discountAmount = Math.round(total * 0.20);
-            setDiscount(discountAmount);
-            setDiscountApplied(true);
-            setCouponStatus({ message: `20% discount applied! You saved ₹${discountAmount.toLocaleString()}.`, type: 'success' });
-        } else if (upperCode) {
-            setDiscount(0);
-            setDiscountApplied(false);
-            setCouponStatus({ message: 'Invalid or expired coupon code.', type: 'error' });
-        } else {
-            setDiscount(0);
-            setDiscountApplied(false);
-            setCouponStatus({ message: '', type: '' });
-        }
-        setApplying(false);
-    }, [total, setDiscount, setDiscountApplied]);
-    
-    useEffect(() => {
-        // Clear status if total changes drastically or cart is cleared
-        if (total === 0) {
-            setDiscount(0);
-            setDiscountApplied(false);
-            setCouponStatus({ message: '', type: '' });
-            setCouponCode('');
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [total]);
-
-    return (
-        <div className="border-t pt-4 mt-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Have a Coupon Code?</label>
-            <div className="flex gap-2">
-                <input
-                    type="text"
-                    value={couponCode}
-                    onChange={(e) => {
-                        setCouponCode(e.target.value);
-                        setCouponStatus({ message: '', type: '' }); // Clear status on change
-                    }}
-                    placeholder="Enter code"
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500"
-                />
-                <button
-                    onClick={() => validateCoupon(couponCode)}
-                    disabled={applying || couponCode.length === 0}
-                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400"
-                >
-                    {applying ? 'Applying...' : 'Apply'}
-                </button>
-            </div>
-            {couponStatus.message && (
-                <p className={`mt-2 text-sm ${
-                    couponStatus.type === 'success' ? 'text-green-600 bg-green-50 p-2 rounded' : 'text-red-600 bg-red-50 p-2 rounded'
-                }`}>
-                    {couponStatus.message}
-                </p>
-            )}
-        </div>
-    );
-};
-
-// --- 3. Item Detail Component (for better rendering in summary) ---
-const ItemDetail = ({ item }) => {
-    return (
-        <div className="flex justify-between items-start py-4">
-            <div className="flex items-center space-x-4">
-                <img 
-                    src={item.imageUrls?.[0] || item.imageUrl || '/placeholder-image.jpg'} 
-                    alt={item.name} 
-                    className="w-16 h-16 object-cover rounded-lg border" 
-                    onError={(e) => {
-                        e.target.src = '/placeholder-image.jpg';
-                    }}
-                />
-                <div>
-                    <p className="font-medium text-base">{item.name}</p>
-                    <p className="text-sm text-gray-500">
-                        Qty: {item.quantity} | Unit Price: ₹{item.price.toLocaleString()}
-                    </p>
-                    {item.customization && (
-                        <p className="text-xs text-blue-600 mt-1">
-                            Customization: {item.customization.type} ({item.customization.details || 'View in Cart'})
-                        </p>
-                    )}
-                </div>
-            </div>
-            <p className="font-semibold text-lg text-gray-800">₹{item.subtotal.toLocaleString()}</p>
-        </div>
-    );
-};
-
-// =================================================================================
-//                                  MAIN CHECKOUT COMPONENT
-// =================================================================================
+const GOOGLE_MAPS_API_KEY = "YOUR_GOOGLE_MAPS_API_KEY_HERE";
 
 const Checkout = () => {
   const navigate = useNavigate();
-  const { items, clearCart, updateCartItem } = useCart(); 
-  
-  // 💥 MODIFICATION: Current User ID derived directly from localStorage
-  const currentUserId = localStorage.getItem('token'); 
+  const { items, clearCart, updateCartItem } = useCart();
 
   const [checkoutItems, setCheckoutItems] = useState([]);
+  const [total, setTotal] = useState(0);
   const [currentStep, setCurrentStep] = useState(1);
   const [processingPayment, setProcessingPayment] = useState(false);
-  const [showAddressManager, setShowAddressManager] = useState(false);
 
   const [form, setForm] = useState({
     name: "",
     phone: "",
-    address: "", // Full address line
+    address: "",
     pincode: "",
     city: "",
     email: ""
   });
   
+  const [userDataFromDB, setUserDataFromDB] = useState(null); 
   const [isFetchingUser, setIsFetchingUser] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState("");
-  const [discount, setDiscount] = useState(0);
-  const [discountApplied, setDiscountApplied] = useState(false);
-
   const [errors, setErrors] = useState({
     form: "",
+    customization: "",
     payment: ""
   });
   const [fetchingLocation, setFetchingLocation] = useState(false);
 
-
-  // --- CALCULATED VALUES (useMemo for optimization) ---
-  const subtotal = useMemo(() => 
-    checkoutItems.reduce((sum, item) => sum + (item.subtotal || 0), 0), 
-    [checkoutItems]
-  );
-  
-  const shippingCharge = useMemo(() => (subtotal >= 500) ? 0 : 50, [subtotal]);
-  
-  const total = useMemo(() => subtotal + shippingCharge - discount, [subtotal, shippingCharge, discount]);
-
-  // --- Utility Functions ---
-
   // Function to convert coordinates to a full address using Google Maps Geocoding API
-  const fetchAddressFromCoords = async (latitude, longitude) => {
-    setFetchingLocation(true);
-    setErrors(prev => ({ ...prev, form: "" }));
-
-    if (GOOGLE_MAPS_API_KEY === "YOUR_GOOGLE_MAPS_API_KEY_HERE") {
-        setErrors(prev => ({ ...prev, form: "Geocoding API key not set. Cannot fetch location." }));
-        setFetchingLocation(false);
-        return;
-    }
-
+  const reverseGeocode = async (lat, lng) => {
+    const apiUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_MAPS_API_KEY}`;
+    
     try {
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_MAPS_API_KEY}`
-      );
-      const data = await response.json();
-      
-      if (data.status === 'OK' && data.results.length > 0) {
-        const result = data.results[0];
-        const fullAddress = result.formatted_address;
-        
-        let city = '';
-        let pincode = '';
+      const response = await fetch(apiUrl);
+      if (!response.ok) throw new Error("Geocoding API failed to respond.");
 
-        for (const component of result.address_components) {
-          if (component.types.includes('locality')) {
+      const data = await response.json();
+
+      if (data.status === "OK" && data.results.length > 0) {
+        // Find the full address string (usually the first result)
+        const fullAddress = data.results[0].formatted_address;
+        
+        // Extract specific components like city and pincode
+        const addressComponents = data.results[0].address_components;
+        let city = "Unknown City";
+        let pincode = "";
+
+        for (const component of addressComponents) {
+          if (component.types.includes("locality")) {
             city = component.long_name;
           }
-          if (component.types.includes('postal_code')) {
+          if (component.types.includes("postal_code")) {
             pincode = component.long_name;
           }
+          // Fallback for city if 'locality' is missing (e.g., using 'administrative_area_level_2' for regions)
+          if (city === "Unknown City" && component.types.includes("administrative_area_level_2")) {
+             city = component.long_name;
+          }
         }
 
-        setForm(prev => ({
-          ...prev,
-          address: fullAddress,
-          city: city || prev.city,
-          pincode: pincode || prev.pincode
-        }));
+        return { fullAddress, city, pincode };
       } else {
-        setErrors(prev => ({ ...prev, form: "Failed to get address from coordinates: " + (data.error_message || data.status) }));
-        console.error("Geocoding failed:", data.status, data.error_message);
+        throw new Error(data.status === "ZERO_RESULTS" ? "No address found for these coordinates." : data.error_message || "Geocoding failed.");
       }
     } catch (error) {
-      setErrors(prev => ({ ...prev, form: "Error fetching address from location API." }));
-      console.error("Error fetching address:", error);
-    } finally {
-      setFetchingLocation(false);
+      console.error("Reverse Geocoding Error:", error.message);
+      throw new Error(`Reverse geocoding failed: ${error.message}`);
     }
   };
 
-  const fetchCurrentLocation = () => {
-    if (navigator.geolocation) {
-      setFetchingLocation(true);
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          fetchAddressFromCoords(position.coords.latitude, position.coords.longitude);
-        },
-        (error) => {
-          let errorMessage = "Could not fetch current location.";
-          if (error.code === error.PERMISSION_DENIED) {
-             errorMessage = "Location permission denied by user. Please enter manually.";
-          }
-          setErrors(prev => ({ ...prev, form: errorMessage }));
-          setFetchingLocation(false);
-        },
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-      );
-    } else {
-      setErrors(prev => ({ ...prev, form: "Geolocation is not supported by this browser." }));
-    }
-  };
-  
-  // --- Data Fetching and Initialization ---
-
-  // 1. Fetch user data (to pre-fill address form)
+  // 🔑 Fetch User Data from Firebase
   useEffect(() => {
+    const currentUserId = localStorage.getItem('token'); 
+    
+    if (!currentUserId) {
+      setErrors(prev => ({ ...prev, form: "You must be logged in to checkout. User ID not found." }));
+      setIsFetchingUser(false);
+      return;
+    }
+
     const fetchUserData = async () => {
-      if (!currentUserId) {
-        setIsFetchingUser(false);
-        return;
-      }
-      
       try {
         const userRef = doc(db, "users", currentUserId);
-        const docSnap = await getDoc(userRef);
-        
-        if (docSnap.exists()) {
-          const data = docSnap.data();
+        const userDoc = await getDoc(userRef);
+
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
           
-          // Pre-fill form with user data, prioritize saved fields if available
-          const defaultAddress = data.addresses?.[0] || {};
-          
-          setForm({
-            name: data.name || defaultAddress.name || "",
-            phone: data.contactNo || defaultAddress.phone || "",
-            email: data.email || defaultAddress.email || "",
-            address: defaultAddress.fullAddress || "",
-            pincode: defaultAddress.pincode || "",
-            city: defaultAddress.city || ""
+          setUserDataFromDB({
+            ...userData,
+            userId: currentUserId,
           });
+
+          setForm(prevForm => ({
+            ...prevForm,
+            name: userData.name || prevForm.name,
+            email: userData.email || prevForm.email,
+            phone: userData.contactNo || userData.phone || prevForm.phone, 
+          }));
+        } else {
+          setUserDataFromDB({ userId: currentUserId });
+          console.warn("User profile data not found, proceeding with form fill.");
         }
-      } catch (e) {
-        console.error("Error fetching user data:", e);
+      } catch (err) {
+        console.error("Error fetching user data:", err);
+        setErrors(prev => ({ ...prev, form: "Failed to load user information." }));
       } finally {
         setIsFetchingUser(false);
       }
     };
 
     fetchUserData();
-  }, [currentUserId]);
+  }, []); 
 
-  // 2. Set checkout items from cart
+  // Load Razorpay script
   useEffect(() => {
-    const calculatedItems = items.map(item => {
-      const sub = (item.price || 0) * (item.quantity || 1);
-      return {
+    const loadRazorpayScript = () => {
+      return new Promise((resolve) => {
+        const script = document.createElement('script');
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.onload = () => resolve(true);
+        script.onerror = () => resolve(false);
+        document.body.appendChild(script);
+      });
+    };
+
+    loadRazorpayScript();
+  }, []);
+
+  // Load cart items
+  useEffect(() => {
+    const stored = sessionStorage.getItem("selectedCartItems");
+
+    if (stored) {
+      const selected = JSON.parse(stored);
+      const itemsWithCustomization = selected.map(item => ({
         ...item,
-        subtotal: sub 
-      };
-    });
-    setCheckoutItems(calculatedItems);
+        selectedColor: item.selectedColor || (item.colors ? item.colors[0] : ""),
+        selectedSize: item.selectedSize || (item.sizes ? item.sizes[0] : ""),
+        selectedRam: item.selectedRam || (item.rams ? item.rams[0] : "")
+      }));
+      setCheckoutItems(itemsWithCustomization);
+
+      const sum = itemsWithCustomization.reduce(
+        (acc, item) => acc + item.price * item.quantity,
+        0
+      );
+      setTotal(sum);
+    } else {
+      const itemsWithCustomization = items.map(item => ({
+        ...item,
+        selectedColor: item.selectedColor || (item.colors ? item.colors[0] : ""),
+        selectedSize: item.selectedSize || (item.sizes ? item.sizes[0] : ""),
+        selectedRam: item.selectedRam || (item.rams ? item.rams[0] : "")
+      }));
+      setCheckoutItems(itemsWithCustomization);
+
+      const sum = itemsWithCustomization.reduce(
+        (acc, item) => acc + item.price * item.quantity,
+        0
+      );
+      setTotal(sum);
+    }
   }, [items]);
 
-  // If cart is empty, redirect
-  useEffect(() => {
-    if (items.length === 0 && !isFetchingUser) {
-      const timer = setTimeout(() => navigate('/cart'), 100);
-      return () => clearTimeout(timer);
-    }
-  }, [items.length, isFetchingUser, navigate]);
-  
-  // --- Step Handlers ---
-
-  const handleFormChange = (e) => {
-    const { name, value } = e.target;
-    setForm(prev => ({ ...prev, [name]: value }));
-  };
-
+  // Validation functions
   const validateForm = () => {
-    const { name, phone, address, pincode, city, email } = form;
+    const { name, phone, address, city, pincode, email } = form;
     
-    if (!name || !phone || !address || !pincode || !city || !email) {
-      setErrors(prev => ({ ...prev, form: "All fields are required. Please check Name, Phone, Address, Pincode, City, and Email." }));
+    if (!userDataFromDB || !userDataFromDB.userId) return "User ID missing. Please log in again."; 
+    if (!name.trim()) return "Name is required";
+    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "Valid email is required";
+    if (!phone.trim() || !/^\d{10}$/.test(phone)) return "Valid 10-digit phone number is required";
+    if (!address.trim()) return "Address is required";
+    if (!city.trim()) return "City is required";
+    if (!pincode.trim() || !/^\d{6}$/.test(pincode)) return "Valid 6-digit pincode is required";
+    
+    return null;
+  };
+
+  const validateCustomization = () => {
+    const incompleteCustomization = checkoutItems.find(item => {
+      if (item.colors && !item.selectedColor) return true;
+      if (item.sizes && !item.selectedSize) return true;
+      if (item.rams && !item.selectedRam) return true;
       return false;
-    }
-    if (!/^[a-zA-Z\s]{2,}$/.test(name)) {
-        setErrors(prev => ({ ...prev, form: "Please enter a valid name (min 2 chars, letters only)." }));
-        return false;
-    }
-    if (!/^\d{10}$/.test(phone)) {
-        setErrors(prev => ({ ...prev, form: "Phone number must be exactly 10 digits." }));
-        return false;
-    }
-    if (!/^[\w.-]+@([\w-]+\.)+[\w-]{2,4}$/.test(email)) {
-        setErrors(prev => ({ ...prev, form: "Please enter a valid email address." }));
-        return false;
-    }
-    if (!/^\d{6}$/.test(pincode)) {
-        setErrors(prev => ({ ...prev, form: "Pincode must be 6 digits." }));
-        return false;
-    }
+    });
+
+    return incompleteCustomization;
+  };
+
+  // Handle customization changes
+  const handleCustomizationChange = (itemId, field, value) => {
+    setCheckoutItems(prevItems =>
+      prevItems.map(item =>
+        item.id === itemId ? { ...item, [field]: value } : item
+      )
+    );
     
-    setErrors(prev => ({ ...prev, form: "" }));
-    return true;
+    updateCartItem(itemId, { [field]: value });
   };
-  
-  const nextStep = (step) => {
-    if (step === 1) {
-      if (validateForm()) {
-        setCurrentStep(2);
-      }
-    } else if (step === 2) {
-      setCurrentStep(3);
+
+  // Handle Input Change
+  const handleChange = (e) => {
+    setForm({ ...form, [e.target.name]: e.target.value });
+    if (errors.form) {
+      setErrors(prev => ({ ...prev, form: "" }));
     }
   };
 
-  const backStep = (step) => {
-    if (step === 2) {
-      setCurrentStep(1);
-    } else if (step === 3) {
-      setCurrentStep(2);
+  // Proceed to Payment
+  const proceedToPayment = () => {
+    const customizationError = validateCustomization();
+    if (customizationError) {
+      setErrors(prev => ({ ...prev, customization: "⚠️ Please select all customization options for your items!" }));
+      return;
     }
+
+    if (isFetchingUser) {
+        setErrors(prev => ({ ...prev, form: "Loading user details. Please wait..." }));
+        return;
+    }
+    if (!userDataFromDB || !userDataFromDB.userId) {
+        setErrors(prev => ({ ...prev, form: "User details are not loaded. Please wait or refresh." }));
+        return;
+    }
+
+    setCurrentStep(2);
+    setErrors({ form: "", customization: "", payment: "" });
   };
-  
+
+  // Cancel Order
+  const handleCancel = () => {
+    sessionStorage.removeItem("selectedCartItems");
+    navigate("/");
+  };
+
+  // Back to Customization
   const backToCustomization = () => {
-      navigate('/cart');
+    setCurrentStep(1);
+    setErrors({ form: "", customization: "", payment: "" });
   };
   
-  // --- Payment / Order Placement ---
-
-  const handlePayment = async () => {
-    if (!paymentMethod) {
-      setErrors(prev => ({ ...prev, payment: "Please select a payment method before proceeding." }));
+  // Handle Live Location with Reverse Geocoding
+  const handleLiveLocation = () => {
+    if (!navigator.geolocation) {
+      setErrors(prev => ({ ...prev, form: "Geolocation is not supported by your browser." }));
       return;
     }
     
-    setProcessingPayment(true);
-    setErrors(prev => ({ ...prev, payment: "" }));
+    setFetchingLocation(true);
+    setErrors(prev => ({ ...prev, form: "" }));
 
-    // Simulate online payment success if not COD
-    if (paymentMethod !== 'cod') {
-        await new Promise(resolve => setTimeout(resolve, 2000)); 
-    }
-
-    try {
-      const orderData = {
-        // Use currentUserId directly from localStorage (or null if not found)
-        userId: currentUserId || null, 
-        orderId: `ORD-${Date.now().toString().slice(-10)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
-        customerDetails: {
-            ...form,
-            shippingAddress: `${form.address}, ${form.city} - ${form.pincode}`
-        },
-        items: checkoutItems.map(item => ({
-          id: item.id,
-          name: item.name,
-          price: item.price,
-          quantity: item.quantity,
-          imageUrl: item.imageUrls?.[0] || item.imageUrl,
-          customization: item.customization || null,
-        })),
-        financials: {
-            subtotal: subtotal,
-            shipping: shippingCharge,
-            discount: discount,
-            tax: 0, 
-            totalAmount: total
-        },
-        paymentMethod: paymentMethod,
-        status: paymentMethod === 'cod' ? 'confirmed' : 'confirmed', 
-        paymentStatus: paymentMethod === 'cod' ? 'pending_cod' : 'paid',
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-        source: 'web_checkout', 
-        device: navigator.userAgent
-      };
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      const { latitude, longitude } = position.coords;
       
-      // 1. Save order to Firestore
-      if (!currentUserId) {
-          // Fallback logic for guests/unauthenticated users if needed, 
-          // but for this structure, we assume a token/user ID is necessary for order saving.
-          throw new Error("User ID is required to place an order. Please ensure a user token is set in localStorage.");
+      try {
+        const { fullAddress, city, pincode } = await reverseGeocode(latitude, longitude);
+
+        setForm(prevForm => ({
+          ...prevForm,
+          address: fullAddress,
+          city: city,
+          pincode: pincode || '000000' // Use '000000' if no pincode is returned
+        }));
+        
+        setErrors(prev => ({ ...prev, form: "✅ Full address successfully captured from location!" }));
+        alert(`Address Found: ${fullAddress}. Please review and correct if necessary.`);
+        
+      } catch (error) {
+        setErrors(prev => ({ 
+            ...prev, 
+            form: `⚠️ Failed to get address. Coordinates captured: LAT ${latitude.toFixed(6)}, LNG ${longitude.toFixed(6)}. Error: ${error.message}`
+        }));
+        // Fallback to coordinates if API call fails
+        setForm(prevForm => ({
+            ...prevForm,
+            address: `Coordinates: LAT ${latitude.toFixed(6)}, LNG ${longitude.toFixed(6)}`,
+            city: 'Location Fetched',
+            pincode: '000000'
+        }));
+      } finally {
+        setFetchingLocation(false);
       }
-      const userOrdersRef = collection(db, "users", currentUserId, "orders");
-      const orderDocRef = await addDoc(userOrdersRef, orderData);
-
-      // 2. Clear cart and navigate
-      clearCart();
       
-      // Navigate to confirmation page
-      navigate(`/order-confirmation/${orderDocRef.id}`, { 
-          state: { 
-              orderId: orderData.orderId, 
-              amount: total, 
-              method: paymentMethod,
-              isCod: paymentMethod === 'cod' 
-          }
-      });
+    }, (error) => {
+      setFetchingLocation(false);
+      let errorMessage = "Could not get location.";
+      if (error.code === error.PERMISSION_DENIED) {
+        errorMessage = "Location access denied. Please allow location access in your browser settings.";
+      } else if (error.code === error.TIMEOUT) {
+        errorMessage = "Location request timed out.";
+      }
+      setErrors(prev => ({ ...prev, form: `⚠️ ${errorMessage}` }));
+    });
+  };
 
+  // Save Order to Firebase Firestore
+  const saveOrderToFirebase = async (data, userId) => {
+    try {
+        const ordersCollectionRef = collection(db, "users", userId, "orders"); 
+        
+        const dataWithTimestamp = {
+          ...data,
+          customerID: userId,
+          createdAt: serverTimestamp() 
+        }
+
+        const docRef = await addDoc(ordersCollectionRef, dataWithTimestamp);
+        console.log("Order successfully written to subcollection with ID: ", docRef.id);
+        return true;
     } catch (e) {
-      console.error("Critical error placing order: ", e);
-      setErrors(prev => ({ ...prev, payment: `Order placement failed: ${e.message}. Please try again.` }));
-    } finally {
-      setProcessingPayment(false);
+        console.error("Error adding document to Firebase subcollection: ", e);
+        setErrors(prev => ({ ...prev, payment: "Payment was successful, but failed to save order! Please contact support with your payment details." }));
+        return false;
     }
   };
 
-  // --- Render ---
+  // Create Razorpay Order
+  const createRazorpayOrder = async (amount) => {
+    return {
+      id: `order_${Date.now()}`,
+      currency: "INR",
+      amount: amount * 100,
+    };
+  };
 
-  if (isFetchingUser) {
-      return (
-          <div className="flex justify-center items-center h-screen bg-gray-50">
-              <div className="text-xl text-gray-700 p-8 rounded-lg shadow-md border">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500 mr-3 inline-block"></div>
-                  Loading user profile and cart...
-              </div>
-          </div>
-      );
-  }
-  
-  if (items.length === 0) {
-      return (
-          <div className="flex justify-center items-center h-screen bg-gray-50">
-              <div className="text-xl text-gray-700 p-8 rounded-lg shadow-md border">
-                  Your cart is empty. Redirecting you to shopping...
-              </div>
-          </div>
-      );
-  }
+  // Verify Payment
+  const verifyPayment = async (razorpayPaymentId, razorpayOrderId, razorpaySignature) => {
+    return { success: true };
+  };
+
+  // Initialize Razorpay Payment
+  const initializeRazorpayPayment = async () => {
+    if (!window.Razorpay) {
+      setErrors(prev => ({ ...prev, payment: "Payment gateway not loaded. Please refresh the page." }));
+      return false;
+    }
+    
+    const currentUserId = userDataFromDB?.userId;
+
+    if (!currentUserId) {
+        setErrors(prev => ({ ...prev, payment: "User not logged in. Cannot proceed with payment." }));
+        return false;
+    }
+
+    try {
+      const order = await createRazorpayOrder(total);
+      
+      const options = {
+        key: "rzp_test_RD3J1sajzD89a8",
+        amount: order.amount,
+        currency: order.currency,
+        name: "Your Store Name",
+        description: "Order Payment",
+        handler: async function (response) {
+          setProcessingPayment(true);
+          
+          try {
+            const verificationResult = await verifyPayment(
+              response.razorpay_payment_id,
+              response.razorpay_order_id,
+              response.razorpay_signature
+            );
+
+            if (verificationResult.success) {
+              const orderData = {
+                paymentId: response.razorpay_payment_id,
+                orderId: `ORD-${Date.now()}`,
+                razorpayOrderId: response.razorpay_order_id,
+                amount: total,
+                items: checkoutItems,
+                customerInfo: form,
+                paymentMethod: "razorpay",
+                status: "confirmed",
+                createdAt: new Date().toISOString()
+              };
+
+              const saved = await saveOrderToFirebase(orderData, currentUserId);
+              if (!saved) {
+                  setProcessingPayment(false);
+                  return; 
+              }
+
+              sessionStorage.setItem("orderSuccessData", JSON.stringify(orderData));
+
+              clearCart();
+              sessionStorage.removeItem("selectedCartItems");
+              
+              navigate("/order-success");
+            } else {
+              setErrors(prev => ({ ...prev, payment: "Payment verification failed. Please try again." }));
+            }
+          } catch (error) {
+            console.error("Payment verification error:", error);
+            setErrors(prev => ({ ...prev, payment: "Payment verification failed. Please contact support." }));
+          } finally {
+            setProcessingPayment(false);
+          }
+        },
+        prefill: {
+          name: form.name,
+          email: form.email,
+          contact: form.phone,
+        },
+        notes: {
+          address: `${form.address}, ${form.city} - ${form.pincode}`,
+        },
+        theme: {
+          color: "#6366f1",
+        },
+        modal: {
+          ondismiss: function() {
+            setProcessingPayment(false);
+            setErrors(prev => ({ ...prev, payment: "Payment was cancelled. Please try again." }));
+          },
+        },
+      };
+
+      const razorpay = new window.Razorpay(options);
+      razorpay.open();
+      return true;
+
+    } catch (error) {
+      console.error("Razorpay initialization error:", error);
+      setErrors(prev => ({ ...prev, payment: "Failed to initialize payment. Please try again." }));
+      return false;
+    }
+  };
+
+  // Handle different payment methods
+  const handlePayment = async () => {
+    if (processingPayment) return;
+
+    const formError = validateForm();
+    if (formError) {
+      setErrors(prev => ({ ...prev, form: `⚠️ ${formError}` }));
+      return;
+    }
+
+    if (!paymentMethod) {
+      setErrors(prev => ({ ...prev, payment: "⚠️ Please select a payment method!" }));
+      return;
+    }
+    
+    const currentUserId = userDataFromDB?.userId;
+
+    if (!currentUserId) {
+        setErrors(prev => ({ ...prev, payment: "User not logged in. Cannot proceed with payment." }));
+        setProcessingPayment(false);
+        return;
+    }
+
+    setProcessingPayment(true);
+    setErrors({ form: "", customization: "", payment: "" });
+
+    try {
+      if (paymentMethod === "razorpay") {
+        await initializeRazorpayPayment();
+      } else if (paymentMethod === "cod") {
+        const orderData = {
+          paymentId: `COD-${Date.now()}`,
+          orderId: `ORD-${Date.now()}`,
+          amount: total,
+          items: checkoutItems,
+          customerInfo: form,
+          paymentMethod: "cod",
+          status: "pending",
+          createdAt: new Date().toISOString()
+        };
+
+        const saved = await saveOrderToFirebase(orderData, currentUserId);
+        if (!saved) {
+            setProcessingPayment(false);
+            return;
+        }
+
+        sessionStorage.setItem("orderSuccessData", JSON.stringify(orderData));
+
+        alert("Order Placed Successfully! (Cash on Delivery)");
+        
+        clearCart();
+        sessionStorage.removeItem("selectedCartItems");
+        
+        navigate("/order-success");
+      } else {
+        await initializeRazorpayPayment();
+      }
+      
+    } catch (error) {
+      console.error("Payment error:", error);
+      setErrors(prev => ({ ...prev, payment: "Payment failed. Please try again." }));
+    } finally {
+      if (paymentMethod === "cod") {
+        setProcessingPayment(false);
+      }
+    }
+  };
 
   return (
-    <div className="container mx-auto p-4 md:p-8 flex flex-col lg:flex-row gap-8 min-h-screen">
-      
-      {/* LEFT COLUMN: Steps & Forms */}
-      <div className="lg:w-2/3 space-y-8">
-        <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-100">
-          <h1 className="text-3xl font-extrabold mb-6 text-gray-900">Finalize Your Purchase</h1>
-          
-          {/* Progress Bar */}
-          <div className="flex justify-between items-center mb-10 relative">
-            <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-gray-200 -translate-y-1/2 z-0 mx-8"></div>
-            {['Address', 'Summary', 'Payment'].map((label, index) => (
-              <div key={index} className="flex flex-col items-center z-10 w-1/3">
-                <div className={`w-12 h-12 flex items-center justify-center rounded-full font-bold text-white transition-all duration-300 shadow-md
-                  ${currentStep > index + 1 
-                    ? 'bg-green-500' 
-                    : currentStep === index + 1 
-                    ? 'bg-purple-600 ring-4 ring-purple-200' 
-                    : 'bg-gray-400'
-                  }`}
-                >
-                  {currentStep > index + 1 ? '✓' : index + 1}
-                </div>
-                <p className={`mt-2 text-sm text-center ${currentStep === index + 1 ? 'text-purple-600 font-bold' : 'text-gray-500'}`}>
-                  {label}
-                </p>
-              </div>
-            ))}
-          </div>
+    <div className="min-h-screen bg-gray-100 py-6">
+      <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-6">
 
-          {/* --- STEP 1: ADDRESS --- */}
-          {currentStep === 1 && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center border-b pb-2 mb-4">
-                  <h2 className="text-2xl font-semibold text-purple-600">1. Shipping & Contact Details</h2>
-                  {currentUserId && (
-                    <button 
-                        onClick={() => setShowAddressManager(true)}
-                        className="text-sm text-blue-600 hover:text-blue-800 font-medium py-1 px-3 border border-blue-200 rounded-full bg-blue-50 transition-colors"
-                    >
-                        Use Saved Address
-                    </button>
-                  )}
+        {/* STEP INDICATOR */}
+        <div className="flex justify-center mb-8">
+          <div className="flex items-center">
+            <div className={`flex flex-col items-center ${currentStep >= 1 ? 'text-purple-600' : 'text-gray-400'}`}>
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${currentStep >= 1 ? 'bg-purple-600 text-white border-purple-600' : 'border-gray-400'}`}>
+                1
               </div>
-              
-              <form onSubmit={(e) => { e.preventDefault(); nextStep(1); }} className="space-y-5">
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <input
-                    type="text"
-                    name="name"
-                    placeholder="*Full Name"
-                    value={form.name}
-                    onChange={handleFormChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500 transition-shadow"
-                    required
-                  />
-                  <input
-                    type="tel"
-                    name="phone"
-                    placeholder="*Phone Number (10 digits)"
-                    value={form.phone}
-                    onChange={handleFormChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500 transition-shadow"
-                    required
-                  />
+              <span className="text-sm mt-1">Customize</span>
+            </div>
+            <div className={`w-16 h-1 mx-2 ${currentStep >= 2 ? 'bg-purple-600' : 'bg-gray-300'}`}></div>
+            <div className={`flex flex-col items-center ${currentStep >= 2 ? 'text-purple-600' : 'text-gray-400'}`}>
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${currentStep >= 2 ? 'bg-purple-600 text-white border-purple-600' : 'border-gray-400'}`}>
+                2
+              </div>
+              <span className="text-sm mt-1">Payment</span>
+            </div>
+          </div>
+        </div>
+
+        {/* PAGE TITLE */}
+        <h2 className="text-2xl font-bold text-center mb-6">
+          {currentStep === 1 ? "Customize Your Order" : "Payment Details"}
+        </h2>
+
+        {/* ERROR MESSAGES */}
+        {errors.customization && (
+          <div className="mb-4 text-red-600 font-semibold text-center p-3 bg-red-50 rounded-lg">
+            {errors.customization}
+          </div>
+        )}
+        {errors.form && (
+          <div className="mb-4 text-red-600 font-semibold text-center p-3 bg-red-50 rounded-lg">
+            {errors.form}
+          </div>
+        )}
+        {errors.payment && (
+          <div className="mb-4 text-red-600 font-semibold text-center p-3 bg-red-50 rounded-lg">
+            {errors.payment}
+          </div>
+        )}
+
+        {/* STEP 1: CUSTOMIZATION */}
+        {currentStep === 1 && (
+          <div>
+            <h3 className="text-xl font-semibold mb-4">Customize Your Items</h3>
+
+            <div className="space-y-6 mb-6">
+              {checkoutItems.map((item) => (
+                <div key={item.id} className="border rounded-lg p-4 bg-gray-50">
+                  <div className="flex flex-col md:flex-row gap-4 mb-4">
+                    <img
+                      src={item.image}
+                      alt={item.name}
+                      className="w-20 h-20 object-cover rounded-lg"
+                    />
+                    <div className="flex-1">
+                      <h4 className="font-bold text-lg">{item.name}</h4>
+                      <p className="text-gray-600">Quantity: {item.quantity}</p>
+                      <p className="text-purple-600 font-bold">
+                        ₹{(item.price * item.quantity).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* CUSTOMIZATION OPTIONS */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* COLOR SELECTION */}
+                    {item.colors && item.colors.length > 0 && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Color
+                        </label>
+                        <select
+                          value={item.selectedColor || ""}
+                          onChange={(e) => handleCustomizationChange(item.id, 'selectedColor', e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg p-2"
+                        >
+                          <option value="">Select Color</option>
+                          {item.colors.map((color, index) => (
+                            <option key={index} value={color}>
+                              {color}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* SIZE SELECTION */}
+                    {item.sizes && item.sizes.length > 0 && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Size
+                        </label>
+                        <select
+                          value={item.selectedSize || ""}
+                          onChange={(e) => handleCustomizationChange(item.id, 'selectedSize', e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg p-2"
+                        >
+                          <option value="">Select Size</option>
+                          {item.sizes.map((size, index) => (
+                            <option key={index} value={size}>
+                              {size}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* RAM SELECTION */}
+                    {item.rams && item.rams.length > 0 && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          RAM
+                        </label>
+                        <select
+                          value={item.selectedRam || ""}
+                          onChange={(e) => handleCustomizationChange(item.id, 'selectedRam', e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg p-2"
+                        >
+                          <option value="">Select RAM</option>
+                          {item.rams.map((ram, index) => (
+                            <option key={index} value={ram}>
+                              {ram}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* SELECTED CUSTOMIZATION DISPLAY */}
+                  {(item.selectedColor || item.selectedSize || item.selectedRam) && (
+                    <div className="mt-3 p-3 bg-blue-50 rounded-lg">
+                      <p className="text-sm font-medium text-blue-800">
+                        Selected:{" "}
+                        {[
+                          item.selectedColor && `Color: ${item.selectedColor}`,
+                          item.selectedSize && `Size: ${item.selectedSize}`,
+                          item.selectedRam && `RAM: ${item.selectedRam}`
+                        ].filter(Boolean).join(", ")}
+                      </p>
+                    </div>
+                  )}
                 </div>
-                
+              ))}
+            </div>
+
+            {/* PROCEED TO PAYMENT BUTTON */}
+            <div className="flex gap-4">
+              <button
+                onClick={handleCancel}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-medium transition-colors"
+              >
+                Cancel Order
+              </button>
+              <button
+                onClick={proceedToPayment}
+                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-3 rounded-lg font-medium transition-colors"
+              >
+                Proceed to Payment
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 2: PAYMENT */}
+        {currentStep === 2 && (
+          <div>
+            {/* SHIPPING FORM */}
+            <h3 className="text-xl font-semibold mb-4">Shipping Information</h3>
+            
+            {/* LIVE LOCATION BUTTON */}
+            <button
+              onClick={handleLiveLocation}
+              disabled={fetchingLocation}
+              className={`w-full mb-6 py-2 rounded-lg font-medium transition-colors ${
+                fetchingLocation
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : 'bg-indigo-500 hover:bg-indigo-600'
+              } text-white`}
+            >
+              {fetchingLocation ? 'Fetching Location...' : '📍 Use Live Location'}
+            </button>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <div>
+                <label htmlFor="name" className="sr-only">Full Name</label>
                 <input
+                  id="name"
+                  type="text"
+                  name="name"
+                  placeholder="Full Name *"
+                  value={form.name}
+                  onChange={handleChange}
+                  className="border p-3 rounded w-full"
+                  required
+                />
+              </div>
+
+              <div>
+                <label htmlFor="email" className="sr-only">Email</label>
+                <input
+                  id="email"
                   type="email"
                   name="email"
-                  placeholder="*Email Address"
+                  placeholder="Email *"
                   value={form.email}
-                  onChange={handleFormChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500 transition-shadow"
+                  onChange={handleChange}
+                  className="border p-3 rounded w-full"
                   required
                 />
+              </div>
 
-                <textarea
+              <div>
+                <label htmlFor="phone" className="sr-only">Phone Number</label>
+                <input
+                  id="phone"
+                  type="tel"
+                  name="phone"
+                  placeholder="Phone Number *"
+                  value={form.phone}
+                  onChange={handleChange}
+                  className="border p-3 rounded w-full"
+                  required
+                />
+              </div>
+
+              <div>
+                <label htmlFor="city" className="sr-only">City</label>
+                <input
+                  id="city"
+                  type="text"
+                  name="city"
+                  placeholder="City *"
+                  value={form.city}
+                  onChange={handleChange}
+                  className="border p-3 rounded w-full"
+                  required
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label htmlFor="address" className="sr-only">Address</label>
+                <input
+                  id="address"
+                  type="text"
                   name="address"
-                  placeholder="*Full Address (House No, Street, Landmark)"
+                  placeholder="Address *"
                   value={form.address}
-                  onChange={handleFormChange}
-                  rows="3"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500 transition-shadow resize-none"
+                  onChange={handleChange}
+                  className="border p-3 rounded w-full"
                   required
                 />
+              </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <input
-                    type="text"
-                    name="pincode"
-                    placeholder="*Pincode (6 digits)"
-                    value={form.pincode}
-                    onChange={handleFormChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500 transition-shadow"
-                    required
-                  />
-                  <input
-                    type="text"
-                    name="city"
-                    placeholder="*City/District"
-                    value={form.city}
-                    onChange={handleFormChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500 transition-shadow"
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={fetchCurrentLocation}
-                    disabled={fetchingLocation}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:bg-gray-400"
-                  >
-                    {fetchingLocation ? 'Fetching...' : 'Use Current Location'}
-                  </button>
-                </div>
-                
-                {errors.form && (
-                  <div className="p-3 bg-red-100 text-red-600 rounded-lg text-sm border border-red-200">
-                    {errors.form}
+              <div>
+                <label htmlFor="pincode" className="sr-only">Pincode</label>
+                <input
+                  id="pincode"
+                  type="text"
+                  name="pincode"
+                  placeholder="Pincode *"
+                  value={form.pincode}
+                  onChange={handleChange}
+                  className="border p-3 rounded w-full"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* ORDER SUMMARY WITH CUSTOMIZATION */}
+            <h3 className="text-xl font-semibold mb-4">Order Summary</h3>
+            <div className="space-y-3 mb-4">
+              {checkoutItems.map((item) => (
+                <div
+                  key={item.id}
+                  className="border p-3 rounded-lg bg-gray-50"
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <p className="font-semibold">{item.name}</p>
+                      <p className="text-gray-600 text-sm">Qty: {item.quantity}</p>
+                    </div>
+                    <p className="font-bold text-purple-600">
+                      ₹{(item.price * item.quantity).toLocaleString()}
+                    </p>
                   </div>
-                )}
-
-                <div className="flex justify-end pt-4">
-                  <button
-                    type="submit"
-                    className="px-8 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-extrabold shadow-lg transition-transform transform hover:scale-[1.01]"
-                  >
-                    Save Address & Continue ➔
-                  </button>
+                  
+                  {/* Display selected customizations */}
+                  {(item.selectedColor || item.selectedSize || item.selectedRam) && (
+                    <div className="text-sm text-gray-600 bg-white p-2 rounded border">
+                      <strong>Customization:</strong>{" "}
+                      {[
+                        item.selectedColor && `Color: ${item.selectedColor}`,
+                        item.selectedSize && `Size: ${item.selectedSize}`,
+                        item.selectedRam && `RAM: ${item.selectedRam}`
+                      ].filter(Boolean).join(", ")}
+                    </div>
+                  )}
                 </div>
-              </form>
-            </div>
-          )}
-
-          {/* --- STEP 2: SUMMARY --- */}
-          {currentStep === 2 && (
-            <div className="space-y-8">
-              <h2 className="text-2xl font-semibold border-b pb-2 text-purple-600">2. Review Order Details</h2>
-              
-              <div className="border border-purple-200 rounded-xl p-5 bg-purple-50 shadow-inner">
-                <h3 className="font-bold text-lg mb-2 text-purple-800">Delivery Address</h3>
-                <p className='text-gray-700 font-semibold'>{form.name} ({form.phone})</p>
-                <p className='text-gray-600'>{form.address}, {form.city} - {form.pincode}</p>
-                <p className='text-gray-500 text-sm'>Email: {form.email}</p>
-                <button 
-                  onClick={() => setCurrentStep(1)} 
-                  className="text-sm text-blue-600 hover:text-blue-800 mt-2 font-bold transition-colors"
-                >
-                  <span className='mr-1'>&#9998;</span> Edit Address
-                </button>
-              </div>
-              
-              <div className="divide-y divide-gray-200 border rounded-xl p-4 shadow-md">
-                <h3 className="font-bold text-lg mb-2 text-gray-800 pb-2">Items in Cart</h3>
-                {checkoutItems.map((item, index) => (
-                  <ItemDetail key={index} item={item} />
-                ))}
-                
-                <button 
-                    onClick={backToCustomization} 
-                    className="w-full text-center text-sm text-orange-600 hover:text-orange-800 font-medium py-2 mt-2"
-                >
-                    &lt; Go back to edit items in cart
-                </button>
-              </div>
-
-              <div className="flex justify-between pt-4">
-                <button
-                  onClick={() => backStep(2)}
-                  className="px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 font-semibold transition-colors flex items-center gap-2"
-                >
-                    <span>&lt; Back</span>
-                </button>
-                <button
-                  onClick={() => nextStep(2)}
-                  className="px-8 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-extrabold shadow-lg transition-transform transform hover:scale-[1.01]"
-                >
-                  Proceed to Payment ➔
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* --- STEP 3: PAYMENT --- */}
-          {currentStep === 3 && (
-            <div className="space-y-8">
-              <h2 className="text-2xl font-semibold border-b pb-2 text-purple-600">3. Select Payment Method</h2>
-              
-              <div className="border rounded-xl p-5 space-y-4 shadow-md">
-                <h3 className="font-bold text-lg mb-2">Available Options:</h3>
-                
-                <label className={`flex items-center space-x-3 p-4 border rounded-lg cursor-pointer transition-colors ${
-                    paymentMethod === 'online' ? 'border-green-600 ring-2 bg-green-50' : 'hover:bg-gray-50'
-                }`}>
-                  <input
-                    type="radio"
-                    name="paymentMethod"
-                    value="online"
-                    checked={paymentMethod === 'online'}
-                    onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="w-5 h-5 text-purple-600 focus:ring-purple-500 checked:bg-purple-600"
-                  />
-                  <div className='flex-1'>
-                    <span className="font-medium text-gray-800">Credit/Debit Card, UPI, Netbanking (Pay Securely Online)</span>
-                    <p className='text-xs text-gray-500'>Instant payment confirmation. Fastest delivery processing.</p>
-                  </div>
-                </label>
-                
-                <label className={`flex items-center space-x-3 p-4 border rounded-lg cursor-pointer transition-colors ${
-                    paymentMethod === 'cod' ? 'border-blue-600 ring-2 bg-blue-50' : 'hover:bg-gray-50'
-                }`}>
-                  <input
-                    type="radio"
-                    name="paymentMethod"
-                    value="cod"
-                    checked={paymentMethod === 'cod'}
-                    onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="w-5 h-5 text-purple-600 focus:ring-purple-500 checked:bg-purple-600"
-                  />
-                  <div className='flex-1'>
-                    <span className="font-medium text-gray-800">Cash on Delivery (COD)</span>
-                    <p className='text-xs text-gray-500'>Pay when your order is delivered. (Limit: ₹5000)</p>
-                  </div>
-                </label>
-              </div>
-              
-              {errors.payment && (
-                <div className="p-3 bg-red-100 text-red-600 rounded-lg text-sm border border-red-200">
-                  {errors.payment}
-                </div>
-              )}
-
-              <div className="flex justify-between pt-4">
-                <button
-                  onClick={() => backStep(3)}
-                  className="px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 font-semibold transition-colors flex items-center gap-2"
-                >
-                    <span>&lt; Back</span>
-                </button>
-                
-                <button
-                  onClick={handlePayment}
-                  disabled={processingPayment || !paymentMethod || total < 1}
-                  className={`px-8 py-3 rounded-lg font-extrabold shadow-lg transition-transform transform hover:scale-[1.01] ${
-                    processingPayment || !paymentMethod || total < 1
-                      ? 'bg-gray-400 cursor-not-allowed' 
-                      : 'bg-green-600 hover:bg-green-700'
-                  } text-white`}
-                >
-                  {processingPayment 
-                    ? 'Processing Order...' 
-                    : paymentMethod === 'cod' 
-                    ? `Place Order (Pay ₹${total.toLocaleString()} on Delivery)` 
-                    : `Pay ₹${total.toLocaleString()} Now`}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-        
-        {/* Additional Info Box */}
-        <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-100 text-sm text-gray-600 space-y-3">
-            <h3 className="font-bold text-lg text-gray-800">Secure Checkout Guarantee</h3>
-            <p className='flex items-center'><span className='text-green-500 mr-2'>&#10003;</span> All payments are encrypted and secured.</p>
-            <p className='flex items-center'><span className='text-green-500 mr-2'>&#10003;</span> 7-day hassle-free return policy.</p>
-            <p className='flex items-center'><span className='text-green-500 mr-2'>&#10003;</span> Free shipping for all orders above ₹500.</p>
-        </div>
-
-      </div>
-
-      {/* RIGHT COLUMN: Order Details / Cart Summary (always visible) */}
-      <div className="lg:w-1/3 space-y-6">
-        <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-100 sticky lg:top-8">
-          <h2 className="text-xl font-bold mb-4 border-b pb-3 text-gray-800">Price Details</h2>
-          
-          {/* Coupon Input */}
-          <CouponInput 
-              total={subtotal} 
-              setDiscount={setDiscount} 
-              setDiscountApplied={setDiscountApplied}
-          />
-          
-          <div className="mt-4 pt-4 border-t space-y-3">
-            
-            <div className="flex justify-between text-gray-600">
-              <span>Items Subtotal ({checkoutItems.length}):</span>
-              <span>₹{subtotal.toLocaleString()}</span>
-            </div>
-            
-            <div className="flex justify-between text-red-600 font-medium">
-              <span>Coupon Discount:</span>
-              <span>- ₹{discount.toLocaleString()}</span>
+              ))}
             </div>
 
-            <div className="flex justify-between text-gray-600">
-              <span>Shipping Charge:</span>
-              {shippingCharge === 0 ? (
-                  <span className="text-green-600 font-semibold">FREE</span>
-              ) : (
-                  <span className='font-semibold'>+ ₹{shippingCharge}</span>
-              )}
+            {/* PAYMENT OPTIONS */}
+            <h3 className="text-xl font-semibold mt-6 mb-3">Select Payment Method</h3>
+            <div className="space-y-3 border p-4 rounded mb-4">
+              <label className="flex items-center gap-3">
+                <input
+                  type="radio"
+                  name="payment"
+                  value="razorpay"
+                  onChange={(e) => setPaymentMethod(e.target.value)}
+                  className="w-5 h-5"
+                />
+                <span className="font-medium">Razorpay (Credit/Debit Card, UPI, Net Banking)</span>
+              </label>
+
+              <label className="flex items-center gap-3">
+                <input
+                  type="radio"
+                  name="payment"
+                  value="cod"
+                  onChange={(e) => setPaymentMethod(e.target.value)}
+                  className="w-5 h-5"
+                />
+                <span className="font-medium">Cash on Delivery (COD)</span>
+              </label>
             </div>
-            
-            <div className="flex justify-between text-2xl font-bold pt-3 border-t-2 border-gray-200 mt-3">
-              <span>Order Total:</span>
+
+            {/* TOTAL */}
+            <div className="text-right text-xl font-bold mb-6 mt-4">
+              Total:{" "}
               <span className="text-purple-600">₹{total.toLocaleString()}</span>
             </div>
-            
-            <p className='text-xs text-green-700 text-right font-medium pt-1'>
-                You will save ₹{(discount + shippingCharge).toLocaleString()} on this order!
-            </p>
 
+            {/* ACTION BUTTONS */}
+            <div className="flex flex-col md:flex-row gap-4">
+              <button
+                onClick={backToCustomization}
+                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-3 rounded-lg font-medium transition-colors"
+              >
+                Back to Customization
+              </button>
+              
+              <button
+                onClick={handlePayment}
+                disabled={processingPayment}
+                className={`flex-1 py-3 rounded-lg font-medium transition-colors ${
+                  processingPayment 
+                    ? 'bg-gray-400 cursor-not-allowed' 
+                    : 'bg-green-600 hover:bg-green-700'
+                } text-white`}
+              >
+                {processingPayment ? 'Processing...' : paymentMethod === 'cod' ? 'Place Order' : 'Pay Now'}
+              </button>
+            </div>
           </div>
-
-          <button
-              onClick={backToCustomization}
-              className="w-full mt-6 text-sm text-center text-blue-600 hover:text-blue-800 font-medium py-3 rounded-lg border-2 border-dashed border-blue-200 bg-blue-50 transition-colors"
-          >
-              &#9664; Back to Cart to Modify Items
-          </button>
-        </div>
+        )}
       </div>
-      
-      {/* Address Manager Modal */}
-      {showAddressManager && currentUserId && (
-          <AddressManagerModal 
-              userId={currentUserId}
-              currentAddress={form}
-              setAddress={setForm}
-              onClose={() => setShowAddressManager(false)}
-          />
-      )}
     </div>
   );
 };

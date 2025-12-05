@@ -129,6 +129,8 @@ const Home = () => {
 
   // Fetch slides from Firebase
   useEffect(() => {
+    const FIREBASE_POSTER_IMAGE_URL = "https://firebasestorage.googleapis.com/v0/b/emart-ecommerce.firebasestorage.app/o/posters%2F1764734534069-paper-bags-different-colors-blue-background-top-view%20(1).jpg?alt=media&token=5d843cbb-c03b-494e-af81-f11581406735";
+    
     const fetchSlides = async () => {
       try {
         setSlidesLoading(true);
@@ -153,40 +155,45 @@ const Home = () => {
 
         console.log('Fetched slides from Firebase:', fetchedSlides);
         
-        // If no slides in Firebase, use default slides
+        // If no slides in Firebase, use default slides with the specified poster URL
         if (fetchedSlides.length === 0) {
           setSlides([
             {
               id: 'default-1',
-              imageUrl: "https://trios.qa/wp-content/uploads/2024/10/Printing.jpeg",
+              // MODIFIED URL
+              imageUrl: FIREBASE_POSTER_IMAGE_URL, 
               alt: "Printing Services",
               title: "We Provide Offset Printing & Digital Printing",
               subtitle: "Large F.M. (c.o.m.epso.e.F.M.R.) are available here"
             },
             {
               id: 'default-2',
-              imageUrl: "https://simplife.ae/uploads/business_sliders/slider-1692617396-951.jpg",
+              // MODIFIED URL
+              imageUrl: FIREBASE_POSTER_IMAGE_URL,
               alt: "Digital Printing",
               title: "Premium Quality Printing Services",
               subtitle: "High-quality prints for all your business needs"
             },
             {
               id: 'default-3',
-              imageUrl: "https://www.indusdubai.com/wp-content/uploads/2021/10/slide44-scaled.jpg",
+              // MODIFIED URL
+              imageUrl: FIREBASE_POSTER_IMAGE_URL,
               alt: "Office Supplies",
               title: "Complete Office Solutions",
               subtitle: "Everything you need for your office in one place"
             },
             {
               id: 'default-4',
-              imageUrl: "https://descoonline.com/wp-content/uploads/2020/10/Same-Day-Printing-in-Dubai.jpg",
+              // MODIFIED URL
+              imageUrl: FIREBASE_POSTER_IMAGE_URL,
               alt: "Fast Delivery",
               title: "Same Day Printing & Delivery",
               subtitle: "Get your prints delivered on the same day"
             },
             {
               id: 'default-5',
-              imageUrl: "https://macedoniaprojects.co.zw/wp-content/uploads/2023/12/Digital-Printing-Services.jpg",
+              // MODIFIED URL
+              imageUrl: FIREBASE_POSTER_IMAGE_URL,
               alt: "Digital Solutions",
               title: "Digital Printing Services",
               subtitle: "Modern digital printing for modern businesses"
@@ -198,25 +205,28 @@ const Home = () => {
         
       } catch (err) {
         console.error('Error fetching slides from Firebase:', err);
-        // Fallback to default slides if Firebase fails
+        // Fallback to default slides if Firebase fails (also modified)
         setSlides([
           {
             id: 'default-1',
-            imageUrl: "https://trios.qa/wp-content/uploads/2024/10/Printing.jpeg",
+            // MODIFIED URL
+            imageUrl: FIREBASE_POSTER_IMAGE_URL,
             alt: "Printing Services",
             title: "We Provide Offset Printing & Digital Printing",
             subtitle: "Large F.M. (c.o.m.epso.e.F.M.R.) are available here"
           },
           {
             id: 'default-2',
-            imageUrl: "https://simplife.ae/uploads/business_sliders/slider-1692617396-951.jpg",
+            // MODIFIED URL
+            imageUrl: FIREBASE_POSTER_IMAGE_URL,
             alt: "Digital Printing",
             title: "Premium Quality Printing Services",
             subtitle: "High-quality prints for all your business needs"
           },
           {
             id: 'default-3',
-            imageUrl: "https://www.indusdubai.com/wp-content/uploads/2021/10/slide44-scaled.jpg",
+            // MODIFIED URL
+            imageUrl: FIREBASE_POSTER_IMAGE_URL,
             alt: "Office Supplies",
             title: "Complete Office Solutions",
             subtitle: "Everything you need for your office in one place"
