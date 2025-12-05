@@ -1,6 +1,7 @@
 // src/Pages/EMarket.jsx
 import React, { useEffect, useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+// 👇 Import useLocation to read the URL query
+import { useNavigate, useLocation } from "react-router-dom"; 
 
 // Firestore
 import { db } from "../../firebase";
@@ -11,6 +12,8 @@ import { useCart } from "../context/CartContext";
 
 const PLACEHOLDER_IMAGE = "https://placehold.co/400x300?text=No+Image";
 
+// --- Helper Functions (CRITICAL for search) ---
+
 const safeString = (val) => {
   if (!val && val !== "") return "";
   if (typeof val === "string") return val;
@@ -18,6 +21,13 @@ const safeString = (val) => {
     return typeof val.name === "string" ? val.name : "";
   }
   return String(val);
+};
+
+// 👇 NEW HELPER FUNCTION for case-insensitive keyword matching
+const keywordMatches = (text, query) => {
+  const safeText = safeString(text);
+  if (!safeText || !query) return false;
+  return safeText.toLowerCase().includes(query.toLowerCase());
 };
 
 const getDisplayPriceFromProduct = (product) => {
@@ -66,7 +76,6 @@ const extractMainCategories = (products) => {
 const extractSubcategories = (products, mainCategory) => {
   const set = new Set(["All"]);
   if (mainCategory === "All Products") {
-    // For "All Products", show all subcategories
     products.forEach((p) => {
       const sub = safeString(p.subCategory) || 
                  safeString(p.subcategory) || 
@@ -74,7 +83,6 @@ const extractSubcategories = (products, mainCategory) => {
       if (sub.trim()) set.add(sub.trim());
     });
   } else {
-    // For specific main category, show only its subcategories
     products.forEach((p) => {
       const cat = safeString(p.category);
       if (cat.trim() === mainCategory) {
@@ -88,6 +96,7 @@ const extractSubcategories = (products, mainCategory) => {
   return Array.from(set);
 };
 
+// --- ProductCard Component (Your existing component) ---
 const ProductCard = ({
   product,
   addToCart,
@@ -95,6 +104,7 @@ const ProductCard = ({
   updateQuantity,
   navigate,
 }) => {
+  // ... (Your ProductCard implementation remains here) ...
   const qty = getQuantity(product.id);
   const { final, original, discount } = getDisplayPriceFromProduct(product);
 
@@ -226,11 +236,14 @@ const ProductCard = ({
     </div>
   );
 };
+// --- End ProductCard ---
 
 const MAX_SLIDER = 500000;
 
 const EMarket = () => {
   const navigate = useNavigate();
+  // 👇 CRITICAL: Get location object to read the URL query
+  const location = useLocation();
   const cart = useCart();
 
   const [products, setProducts] = useState([]);
@@ -238,9 +251,15 @@ const EMarket = () => {
   const [selectedMainCategory, setSelectedMainCategory] = useState("All Products");
   const [subCategories, setSubCategories] = useState(["All"]);
   const [selectedSubCategory, setSelectedSubCategory] = useState("All");
-  const [priceRange, setPriceRange] = useState([0, 10000]);
+  const [priceRange, setPriceRange] = useState([0, 5000]);
   const [loading, setLoading] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
+
+  // 👇 NEW: Extract Search Query from URL
+  const searchQuery = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get("q") || ""; 
+  }, [location.search]);
 
   // Load products and extract categories
   useEffect(() => {
@@ -269,11 +288,9 @@ const EMarket = () => {
         const mainCats = extractMainCategories(list);
         setMainCategories(mainCats);
         
-        // Extract subcategories for initially selected category
         const subs = extractSubcategories(list, "All Products");
         setSubCategories(subs);
 
-        // Calculate price range
         const maxPrice = list.reduce((mx, p) => {
           const { final } = getDisplayPriceFromProduct(p);
           return Math.max(mx, final || 0);
@@ -284,13 +301,13 @@ const EMarket = () => {
           MAX_SLIDER
         );
 
-        setPriceRange([0, ceilMax || 10000]);
+        setPriceRange([0, Math.min(ceilMax || 10000, 5000)]);
       } catch (e) {
         console.error("Failed to load products", e);
         setProducts([]);
         setMainCategories(["All Products"]);
         setSubCategories(["All"]);
-        setPriceRange([0, MAX_SLIDER]);
+        setPriceRange([0, 5000]);
       } finally {
         setLoading(false);
       }
@@ -303,40 +320,16 @@ const EMarket = () => {
   useEffect(() => {
     const subs = extractSubcategories(products, selectedMainCategory);
     setSubCategories(subs);
-    setSelectedSubCategory("All"); // Reset subcategory selection
-  }, [selectedMainCategory, products]);
+    // Reset subcategory selection only if no search is active
+    if (!searchQuery) {
+        setSelectedSubCategory("All"); 
+    }
+  }, [selectedMainCategory, products, searchQuery]);
 
   const addToCart = (product) => cart.addToCart(product);
   const updateQuantity = (id, qty) => cart.updateQuantity(id, qty);
   const getQuantity = (id) =>
     cart.items.find((i) => i.id === id)?.quantity || 0;
-
-  const filteredProducts = useMemo(() => {
-    return products.filter((p) => {
-      const cat = safeString(p.category).toLowerCase();
-      const sub = safeString(p.subCategory).toLowerCase();
-      const subCatName = safeString(p.subcategory).toLowerCase();
-      const subCategoryName = safeString(p.subCategoryName).toLowerCase();
-      
-      const allSub = sub || subCatName || subCategoryName;
-
-      // Check main category
-      const mainCategoryMatch = 
-        selectedMainCategory === "All Products" ||
-        cat === selectedMainCategory.toLowerCase();
-
-      // Check subcategory
-      const subCategoryMatch = 
-        selectedSubCategory === "All" ||
-        allSub === selectedSubCategory.toLowerCase();
-
-      // Check price
-      const { final } = getDisplayPriceFromProduct(p);
-      const priceMatch = final >= priceRange[0] && final <= priceRange[1];
-
-      return mainCategoryMatch && subCategoryMatch && priceMatch;
-    });
-  }, [products, selectedMainCategory, selectedSubCategory, priceRange]);
 
   const handlePriceChange = (index, value) => {
     const v = Number(value) || 0;
@@ -350,6 +343,49 @@ const EMarket = () => {
 
     setPriceRange(copy);
   };
+
+  const filteredProducts = useMemo(() => {
+    const queryTerm = searchQuery.trim().toLowerCase();
+
+    return products.filter((p) => {
+      const cat = safeString(p.category).toLowerCase();
+      const sub = safeString(p.subCategory).toLowerCase();
+      const subCatName = safeString(p.subcategory).toLowerCase();
+      const subCategoryName = safeString(p.subCategoryName).toLowerCase();
+      
+      const allSub = sub || subCatName || subCategoryName;
+
+      // 1. Check price filter (always apply)
+      const { final } = getDisplayPriceFromProduct(p);
+      const priceMatch = final >= priceRange[0] && final <= priceRange[1];
+
+      // 👇 NEW: Check search query filter
+      const searchMatch = !queryTerm || (
+        keywordMatches(p.name, queryTerm) ||
+        keywordMatches(p.description, queryTerm) ||
+        (Array.isArray(p.searchKeywords) && p.searchKeywords.some(keyword => keywordMatches(keyword, queryTerm))) ||
+        keywordMatches(p.category, queryTerm) ||
+        keywordMatches(p.subCategory, queryTerm)
+      );
+      
+      // 2. Check category filters (only apply if NO search query is present)
+      if (queryTerm) {
+          // If searching, only price and search must match. Ignore category filters.
+          return priceMatch && searchMatch;
+      } else {
+          // If not searching, all filters must match.
+          const mainCategoryMatch = 
+            selectedMainCategory === "All Products" ||
+            cat === selectedMainCategory.toLowerCase();
+            
+          const subCategoryMatch = 
+            selectedSubCategory === "All" ||
+            allSub === selectedSubCategory.toLowerCase();
+
+          return priceMatch && mainCategoryMatch && subCategoryMatch;
+      }
+    });
+  }, [products, selectedMainCategory, selectedSubCategory, priceRange, searchQuery]); 
 
   if (loading) {
     return (
@@ -368,19 +404,27 @@ const EMarket = () => {
       <div className="bg-white border-b shadow-sm">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex overflow-x-auto py-3 space-x-6">
-            {mainCategories.map((category) => (
-              <button
-                key={category}
-                onClick={() => setSelectedMainCategory(category)}
-                className={`flex-shrink-0 px-4 py-2 rounded-lg transition ${
-                  selectedMainCategory === category
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                }`}
-              >
-                {category}
-              </button>
-            ))}
+            {/* 👇 CRITICAL UI CHANGE: Hide category buttons if a search is active */}
+            {!searchQuery ? (
+              mainCategories.map((category) => (
+                <button
+                  key={category}
+                  onClick={() => setSelectedMainCategory(category)}
+                  className={`flex-shrink-0 px-4 py-2 rounded-lg transition ${
+                    selectedMainCategory === category
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  {category}
+                </button>
+              ))
+            ) : (
+              // 👇 Show search term instead of categories
+              <h2 className="text-xl font-semibold py-2">
+                Search Results for: <span className="text-blue-600">"{searchQuery}"</span>
+              </h2>
+            )}
           </div>
         </div>
       </div>
@@ -388,8 +432,10 @@ const EMarket = () => {
       <div className="max-w-7xl mx-auto px-4 py-6">
         <div className="flex gap-6">
           {/* Filters Sidebar */}
+          {/* Filters are kept to allow refinement of search results */}
           <div className={`w-64 ${showFilters ? "block" : "hidden lg:block"}`}>
             <div className="bg-white p-4 rounded shadow-sm sticky top-20">
+              
               {/* Subcategories Section */}
               <h3 className="text-lg font-semibold mb-3">Subcategories</h3>
               <div className="space-y-2 mb-6">
@@ -407,35 +453,54 @@ const EMarket = () => {
 
               <hr className="my-4" />
 
-              {/* Price Range Section */}
-              <h3 className="text-sm font-medium mb-2">Price Range</h3>
-              <div>
-                <label className="text-xs text-gray-500">
-                  Min: ₹{priceRange[0].toLocaleString()}
-                </label>
-                <input
-                  type="range"
-                  min="0"
-                  max={MAX_SLIDER}
-                  step="500"
-                  value={priceRange[0]}
-                  onChange={(e) => handlePriceChange(0, e.target.value)}
-                  className="w-full"
-                />
-              </div>
-              <div className="mt-2">
-                <label className="text-xs text-gray-500">
-                  Max: ₹{priceRange[1].toLocaleString()}
-                </label>
-                <input
-                  type="range"
-                  min="0"
-                  max={MAX_SLIDER}
-                  step="500"
-                  value={priceRange[1]}
-                  onChange={(e) => handlePriceChange(1, e.target.value)}
-                  className="w-full"
-                />
+              {/* Price Range Section - SINGLE SLIDER WITH MIN/MAX DISPLAY */}
+              <div className="mb-6">
+                <h3 className="text-sm font-medium mb-4">Price Range</h3>
+                
+                <div className="flex items-center justify-between mb-4">
+                  <div className="text-center">
+                    <div className="text-xs text-gray-500 mb-1">Min</div>
+                    <div className="text-sm font-medium">₹{priceRange[0].toLocaleString()}</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-xs text-gray-500 mb-1">Max</div>
+                    <div className="text-sm font-medium">₹{priceRange[1].toLocaleString()}</div>
+                  </div>
+                </div>
+
+                <div className="relative pt-1 mb-2">
+                  <input
+                    type="range"
+                    min="0"
+                    max={MAX_SLIDER}
+                    value={priceRange[0]}
+                    onChange={(e) => handlePriceChange(0, e.target.value)}
+                    className="absolute w-full h-2 bg-transparent appearance-none pointer-events-auto z-10"
+                    style={{ WebkitAppearance: 'none' }}
+                  />
+                  <input
+                    type="range"
+                    min="0"
+                    max={MAX_SLIDER}
+                    value={priceRange[1]}
+                    onChange={(e) => handlePriceChange(1, e.target.value)}
+                    className="absolute w-full h-2 bg-transparent appearance-none pointer-events-auto z-20"
+                    style={{ WebkitAppearance: 'none' }}
+                  />
+                  <div className="h-2 bg-gray-200 rounded-full"></div>
+                  <div 
+                    className="absolute top-0 h-2 bg-blue-500 rounded-full"
+                    style={{
+                      left: `${(priceRange[0] / MAX_SLIDER) * 100}%`,
+                      width: `${((priceRange[1] - priceRange[0]) / MAX_SLIDER) * 100}%`
+                    }}
+                  ></div>
+                </div>
+
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>₹0</span>
+                  <span>₹5,00,000</span>
+                </div>
               </div>
             </div>
           </div>
@@ -444,10 +509,13 @@ const EMarket = () => {
           <div className="flex-1">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-xl font-semibold">
-                {selectedMainCategory === "All Products"
+                {/* 👇 Update Title based on search query */}
+                {searchQuery
+                  ? `Results for "${searchQuery}"`
+                  : selectedMainCategory === "All Products"
                   ? "All Products"
                   : selectedMainCategory}
-                {selectedSubCategory !== "All" && ` - ${selectedSubCategory}`}
+                {!searchQuery && selectedSubCategory !== "All" && ` - ${selectedSubCategory}`}
               </h2>
               <div className="text-sm text-gray-600">
                 {filteredProducts.length} products
@@ -456,7 +524,9 @@ const EMarket = () => {
 
             {filteredProducts.length === 0 ? (
               <div className="bg-white p-8 rounded shadow text-center text-gray-500">
-                No products found for the selected filters
+                {searchQuery 
+                  ? `No products found matching "${searchQuery}".` 
+                  : "No products found for the selected filters"}
               </div>
             ) : (
               <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

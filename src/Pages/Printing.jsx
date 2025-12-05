@@ -203,7 +203,7 @@ const Printing = () => {
   const [selectedMainCategory, setSelectedMainCategory] = useState("All Products");
   const [subCategories, setSubCategories] = useState(["All"]);
   const [selectedSubCategory, setSelectedSubCategory] = useState("All");
-  const [priceRange, setPriceRange] = useState([99, 25000]);
+  const [priceRange, setPriceRange] = useState([99, 5000]);
   const [showFilters, setShowFilters] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -241,10 +241,6 @@ const Printing = () => {
         // Extract subcategories for initially selected category
         const subs = extractSubcategories(mapped, "All Products");
         setSubCategories(subs);
-
-        // auto-set slider max from max price found
-        const maxFound = Math.max(...mapped.map((p) => Number(p.price || 0)), 25000);
-        setPriceRange([99, Math.ceil(maxFound / 1000) * 1000]);
       } catch (err) {
         console.error("Error fetching Printing products:", err);
       } finally {
@@ -404,37 +400,60 @@ const Printing = () => {
                 </div>
               </div>
 
-              {/* Price Range */}
+              {/* Price Range - SINGLE SLIDER WITH MIN/MAX DISPLAY */}
               <div className="bg-white rounded-lg shadow-sm p-4">
                 <h3 className="font-semibold text-gray-800 mb-4">Price Range</h3>
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between text-sm text-gray-600">
-                    <span>₹ {priceRange[0]}</span>
-                    <span>₹ {priceRange[1]}</span>
+                  {/* Min/Max Price Display */}
+                  <div className="flex items-center justify-between">
+                    <div className="text-center">
+                      <div className="text-xs text-gray-500 mb-1">Min</div>
+                      <div className="text-sm font-medium">₹{priceRange[0]}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs text-gray-500 mb-1">Max</div>
+                      <div className="text-sm font-medium">₹{priceRange[1]}</div>
+                    </div>
                   </div>
-                  <div className="space-y-4">
-                    <div>
-                      <span className="text-xs text-gray-500 block mb-1">Min: ₹{priceRange[0]}</span>
-                      <input
-                        type="range"
-                        min="99"
-                        max="25000"
-                        value={priceRange[0]}
-                        onChange={(e) => handlePriceChange(0, e.target.value)}
-                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-                    <div>
-                      <span className="text-xs text-gray-500 block mb-1">Max: ₹{priceRange[1]}</span>
-                      <input
-                        type="range"
-                        min="99"
-                        max="25000"
-                        value={priceRange[1]}
-                        onChange={(e) => handlePriceChange(1, e.target.value)}
-                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
+
+                  {/* Single Range Slider Container */}
+                  <div className="relative pt-1">
+                    {/* Min Price Slider */}
+                    <input
+                      type="range"
+                      min="99"
+                      max="25000"
+                      value={priceRange[0]}
+                      onChange={(e) => handlePriceChange(0, e.target.value)}
+                      className="absolute w-full h-2 bg-transparent appearance-none pointer-events-auto z-10"
+                      style={{ WebkitAppearance: 'none' }}
+                    />
+                    {/* Max Price Slider */}
+                    <input
+                      type="range"
+                      min="99"
+                      max="25000"
+                      value={priceRange[1]}
+                      onChange={(e) => handlePriceChange(1, e.target.value)}
+                      className="absolute w-full h-2 bg-transparent appearance-none pointer-events-auto z-20"
+                      style={{ WebkitAppearance: 'none' }}
+                    />
+                    {/* Track Background */}
+                    <div className="h-2 bg-gray-200 rounded-full"></div>
+                    {/* Active Range */}
+                    <div 
+                      className="absolute top-0 h-2 bg-blue-500 rounded-full"
+                      style={{
+                        left: `${((priceRange[0] - 99) / (25000 - 99)) * 100}%`,
+                        width: `${((priceRange[1] - priceRange[0]) / (25000 - 99)) * 100}%`
+                      }}
+                    ></div>
+                  </div>
+
+                  {/* Price Labels */}
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>₹99</span>
+                    <span>₹25,000</span>
                   </div>
                 </div>
               </div>

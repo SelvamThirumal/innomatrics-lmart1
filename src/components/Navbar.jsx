@@ -1,7 +1,15 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import logo from "../assets/newadd.png";
+
+// =========================================================================
+// 1. FIREBASE IMPORTS: Changed path to '../firebase.js'
+// =========================================================================
+import { db } from "../../firebase"; // Import 'db' from the file you provided
+import { collection, getDocs } from "firebase/firestore"; 
+// =========================================================================
+
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -11,9 +19,17 @@ const Navbar = () => {
   const [selectedCount, setSelectedCount] = useState(0);
   const [user, setUser] = useState(null);
   
+  // STATE: Stores the dynamically fetched keywords
+  const [allSearchKeywords, setAllSearchKeywords] = useState([]); 
+  
+  const [searchTerm, setSearchTerm] = useState("");
+  const [suggestions, setSuggestions] = useState([]);
+  const [isSearchDropdownOpen, setIsSearchDropdownOpen] = useState(false);
+  
   const navigate = useNavigate();
   const location = useLocation();
   const dropdownRef = useRef(null);
+  const searchDropdownRef = useRef(null);
   
   const {
     getCartItemsCount,
@@ -26,6 +42,54 @@ const Navbar = () => {
   } = useCart();
   
   const cartItemsCount = getCartItemsCount();
+
+  // =========================================================================
+  // 2. FUNCTION TO FETCH KEYWORDS FROM FIRESTORE
+  // =========================================================================
+  const fetchKeywords = useCallback(async () => {
+    try {
+      // Reference to the 'products' collection
+      const productsCollectionRef = collection(db, "products");
+      const productSnapshot = await getDocs(productsCollectionRef);
+      
+      const keywordsSet = new Set();
+      
+      productSnapshot.forEach((doc) => {
+        const data = doc.data();
+        // Check if the document has a 'searchKeywords' array
+        if (Array.isArray(data.searchKeywords)) {
+          // Add all keywords to the Set to ensure uniqueness
+          data.searchKeywords.forEach(keyword => {
+            if (typeof keyword === 'string' && keyword.trim() !== "") {
+              keywordsSet.add(keyword.toLowerCase());
+            }
+          });
+        }
+        // Optional: Also add the product name and description as keywords
+        if (data.name) keywordsSet.add(data.name.toLowerCase());
+        if (data.description) {
+            data.description.toLowerCase().split(' ').forEach(word => {
+                // Simplified word extraction for description
+                if (word.length > 2) keywordsSet.add(word.replace(/[^a-z0-9]/g, ''));
+            });
+        }
+      });
+      
+      // Convert the Set back to an array and store it in state
+      setAllSearchKeywords(Array.from(keywordsSet).sort());
+      console.log(`Fetched ${keywordsSet.size} unique search keywords.`);
+
+    } catch (error) {
+      console.error("Error fetching search keywords from Firebase. Check Firestore connection/permissions.", error);
+    }
+  }, []);
+
+  // =========================================================================
+  // 3. EFFECT HOOK TO RUN KEYWORD FETCHING ONCE ON MOUNT
+  // =========================================================================
+  useEffect(() => {
+    fetchKeywords();
+  }, [fetchKeywords]); 
 
   // Check if user is logged in
   useEffect(() => {
@@ -48,9 +112,11 @@ const Navbar = () => {
   }, [location.pathname]);
 
   // Calculate selected total whenever items change or cart opens
+  const getSelectedItemsMemo = useCallback(getSelectedItems, [getSelectedItems]);
+  
   useEffect(() => {
     if (isCartOpen) {
-      const selectedItems = getSelectedItems();
+      const selectedItems = getSelectedItemsMemo();
       const selectedTotalAmount = selectedItems.reduce(
         (total, item) => total + item.price * item.quantity,
         0
@@ -59,9 +125,9 @@ const Navbar = () => {
       setSelectedTotal(selectedTotalAmount);
       setSelectedCount(selectedItems.length);
     }
-  }, [items, isCartOpen, getSelectedItems]);
+  }, [items, isCartOpen, getSelectedItemsMemo]);
 
-  // Close dropdown when clicking outside
+  // Close user dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (isUserDropdownOpen && dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -75,11 +141,26 @@ const Navbar = () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [isUserDropdownOpen]);
+  
+  // Close search dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutsideSearch = (event) => {
+      if (isSearchDropdownOpen && searchDropdownRef.current && !searchDropdownRef.current.contains(event.target)) {
+        setIsSearchDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutsideSearch);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutsideSearch);
+    };
+  }, [isSearchDropdownOpen]);
 
   // Fixed cart icon click - only opens sidebar
   const handleCartIconClick = () => {
     setIsCartOpen(true);
     setIsUserDropdownOpen(false);
+    setIsSearchDropdownOpen(false); // Close search dropdown on cart open
   };
 
   // User icon click handler
@@ -107,14 +188,9 @@ const Navbar = () => {
     setIsMenuOpen(false);
   };
 
-  // Navigate to seller page
-  const handleBecomeSeller = () => {
-    navigate("/seller-registration");
-  };
-
   // Checkout from sidebar
   const handleSidebarCheckout = () => {
-    const selected = getSelectedItems();
+    const selected = getSelectedItemsMemo();
 
     if (selected.length === 0) {
       alert("Please select at least one item to checkout!");
@@ -143,6 +219,46 @@ const Navbar = () => {
       removeFromCart(itemId);
     }
   };
+  
+  // --- SEARCH HANDLERS - USES DYNAMIC KEYWORDS ---
+  const handleSearchChange = (event) => {
+    const value = event.target.value;
+    setSearchTerm(value);
+    
+    const lowerCaseValue = value.toLowerCase();
+    
+    // Only show suggestions if the term has more than 1 character and keywords are loaded
+    if (value.length > 1 && allSearchKeywords.length > 0) {
+      
+      const filteredSuggestions = allSearchKeywords
+        .filter(keyword => 
+            keyword.startsWith(lowerCaseValue) && // 1. Must start with the input
+            !/\d/.test(keyword) // 2. FIX: Exclude any keyword containing a digit (e.g., 'tshirt0')
+        ) 
+        // 3. Sort shorter, more relevant matches first
+        .sort((a, b) => a.length - b.length)
+        .slice(0, 8); 
+        
+      setSuggestions(filteredSuggestions);
+      setIsSearchDropdownOpen(filteredSuggestions.length > 0);
+    } else {
+      setSuggestions([]);
+      setIsSearchDropdownOpen(false);
+    }
+  };
+
+  const handleSearchSubmit = (term) => {
+    const finalTerm = term.trim() || searchTerm.trim();
+    if (finalTerm) {
+      // Navigates to a search page with the query parameter
+      navigate(`/search?q=${encodeURIComponent(finalTerm)}`);
+      // Optional: Clear the search bar after navigation
+      setSearchTerm(finalTerm); 
+      setIsSearchDropdownOpen(false);
+      setIsMenuOpen(false); // Close mobile menu if open
+    }
+  };
+  // --- END SEARCH HANDLERS ---
 
   return (
     <div className="bg-white sticky top-0 z-40 shadow-md">
@@ -163,17 +279,6 @@ const Navbar = () => {
 
           {/* Contact and Icons - Hidden on mobile */}
           <div className="hidden md:flex items-center space-x-6">
-            {/* Become a Seller Button */}
-            <button
-              onClick={handleBecomeSeller}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-orange-500 hover:bg-orange-600 transition-colors"
-            >
-              <svg className="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354l.707.707a2 2 0 010 2.828l-6.868 6.868a2 2 0 01-2.828 0l-6.868-6.868a2 2 0 010-2.828l.707-.707m18 0l.707.707a2 2 0 010 2.828l-6.868 6.868a2 2 0 01-2.828 0l-6.868-6.868a2 2 0 010-2.828l.707-.707m18 0V4m-6 0h6m-6 0l.707.707a2 2 0 010 2.828l-6.868 6.868a2 2 0 01-2.828 0l-6.868-6.868a2 2 0 010-2.828l.707-.707m-6 0l-.707-.707a2 2 0 010-2.828l6.868-6.868a2 2 0 012.828 0l6.868 6.868a2 2 0 010 2.828l-.707.707m-6 0h6m-6 0V4" />
-              </svg>
-              Become a Seller
-            </button>
-
             <div className="flex space-x-3">
               {/* Home Button */}
               <button
@@ -253,19 +358,6 @@ const Navbar = () => {
                         >
                           📦 My Orders
                         </button>
-                        
-                        <button
-                          onClick={() => {
-                            setIsUserDropdownOpen(false);
-                            localStorage.setItem("shouldOpenUserDropdown", "false");
-                            setTimeout(() => {
-                              navigate("/seller-registration");
-                            }, 100);
-                          }}
-                          className="w-full px-6 py-3 text-left text-yellow-700 hover:bg-yellow-50 flex items-center text-base font-medium border-b border-gray-100"
-                        >
-                          🛒 Become a Seller
-                        </button>
 
                         <button
                           onClick={() => {
@@ -324,14 +416,6 @@ const Navbar = () => {
 
           {/* Mobile Contact - Visible only on mobile */}
           <div className="md:hidden flex items-center space-x-2">
-            {/* Mobile Become Seller Button */}
-            <button
-              onClick={handleBecomeSeller}
-              className="bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold px-3 py-1.5 rounded-lg text-sm transition duration-200 shadow-md"
-            >
-              🛒 Seller
-            </button>
-            
             {/* Mobile Home Icon */}
             <button
               onClick={() => navigate("/")}
@@ -382,7 +466,7 @@ const Navbar = () => {
                 </div>
               </button>
             )}
-
+            
             {/* Mobile Cart Icon */}
             <button
               onClick={handleCartIconClick}
@@ -407,14 +491,14 @@ const Navbar = () => {
                 </span>
               )}
             </button>
-            
+
             {/* Mobile Menu Button */}
             <button
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="p-2 bg-yellow-400 rounded-md focus:outline-none"
+              onClick={() => setIsMenuOpen(true)}
+              className="w-8 h-8 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
             >
               <svg
-                className="w-5 h-5 text-gray-800"
+                className="w-4 h-4 text-gray-700"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -423,7 +507,7 @@ const Navbar = () => {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d={isMenuOpen ? "M6 18L18 6M6 6l12 12" : "M4 6h16M4 12h16M4 18h16"}
+                  d="M4 6h16M4 12h16m-7 6h7"
                 />
               </svg>
             </button>
@@ -509,28 +593,58 @@ const Navbar = () => {
             {/* Search and Actions - Hidden on mobile */}
             <div className="hidden md:flex items-center space-x-3">
               {/* Search Bar */}
-              <div className="flex items-center bg-white border border-gray-400 rounded-lg px-3 py-2">
-                <input
-                  type="text"
-                  placeholder="Search bar"
-                  className="bg-transparent outline-none text-sm w-48 text-gray-500"
-                />
-                <button className="ml-2 p-1 bg-blue-400 text-white rounded hover:bg-blue-500">
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+              <div className="relative" ref={searchDropdownRef}>
+                <div className="flex items-center bg-white border border-gray-400 rounded-lg px-3 py-2">
+                  <input
+                    type="text"
+                    placeholder="Search bar"
+                    className="bg-transparent outline-none text-sm w-48 text-gray-500"
+                    value={searchTerm}
+                    onChange={handleSearchChange}
+                    // Only show dropdown if keywords have been fetched and input has content
+                    onFocus={() => searchTerm.length > 1 && allSearchKeywords.length > 0 && setIsSearchDropdownOpen(suggestions.length > 0)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleSearchSubmit(searchTerm);
+                      }
+                    }}
+                  />
+                  <button 
+                    onClick={() => handleSearchSubmit(searchTerm)}
+                    className="ml-2 p-1 bg-blue-400 text-white rounded hover:bg-blue-500"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                    />
-                  </svg>
-                </button>
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                      />
+                    </svg>
+                  </button>
+                </div>
+
+                {/* Desktop Search Suggestions Dropdown */}
+                {isSearchDropdownOpen && suggestions.length > 0 && (
+                  <div className="absolute left-0 mt-2 w-full min-w-[300px] bg-white rounded-lg shadow-2xl border border-gray-200 z-50 overflow-hidden">
+                    {suggestions.map((suggestion, index) => (
+                      <button
+                        key={index}
+                        onClick={() => handleSearchSubmit(suggestion)}
+                        className="w-full px-4 py-2 text-left text-gray-700 hover:bg-gray-100 flex items-center text-sm font-medium transition-colors"
+                      >
+                        🔍 {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
+              {/* END Search Bar */}
 
               {/* Upload and Download functionality */}
               <div className="flex items-center space-x-2">
@@ -635,133 +749,162 @@ const Navbar = () => {
       {/* Mobile Menu - Dropdown */}
       {isMenuOpen && (
         <div className="md:hidden absolute top-0 inset-x-0 p-2 transition transform origin-top-right">
-          <div className="rounded-lg shadow-lg ring-1 ring-black ring-opacity-5 bg-white divide-y-2 divide-gray-50">
-            {/* Mobile Menu Header */}
-            <div className="pt-5 pb-6 px-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <img className="h-8 w-auto" src={logo} alt="Logo" onClick={() => navigate("/")} />
-                </div>
-                <div className="-mr-2">
-                  <button
-                    onClick={() => setIsMenuOpen(false)}
-                    className="bg-white rounded-md p-2 inline-flex items-center justify-center text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none"
-                  >
-                    <span className="sr-only">Close menu</span>
-                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
+          <div className="rounded-lg shadow-lg ring-1 ring-black ring-opacity-5 bg-white divide-y divide-gray-100">
+            {/* Header and Close Button */}
+            <div className="px-5 pt-4 pb-3 flex items-center justify-between">
+              <img src={logo} alt="E-Mart Logo" className="h-10 w-auto" onClick={() => navigate("/")} />
+              <button
+                onClick={() => setIsMenuOpen(false)}
+                className="bg-white rounded-md p-2 inline-flex items-center justify-center text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-purple-500"
+              >
+                <span className="sr-only">Close menu</span>
+                <svg
+                  className="h-6 w-6"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            {/* Logged-in User Info for Mobile */}
+            {user && (
+              <div className="px-5 py-3 bg-blue-50 border-y border-gray-100">
+                <h3 className="font-bold text-gray-900 text-lg mb-1">Hello, {user.name}</h3>
+                <p className="text-gray-600 text-sm">{user.email}</p>
               </div>
-              
-              {/* Logged-in User Info for Mobile */}
-              {user && (
-                <div className="mt-4 mb-4 p-3 bg-blue-50 rounded-lg">
-                  <h3 className="font-bold text-gray-900 text-lg mb-1">Hello, {user.name}</h3>
-                  <p className="text-gray-600 text-sm">{user.email}</p>
-                </div>
-              )}
-              
-              <div className="mt-6">
-                <nav className="grid gap-y-4">
-                  {user && (
-                    <>
-                      <Link
-                        to="/my-orders"
-                        onClick={() => setIsMenuOpen(false)}
-                        className="text-base font-medium text-blue-600 hover:text-blue-500 flex items-center"
-                      >
-                        📦 My Orders
-                      </Link>
-                      <Link
-                        to="/seller-registration"
-                        onClick={() => setIsMenuOpen(false)}
-                        className="text-base font-medium text-yellow-600 hover:text-yellow-500 flex items-center"
-                      >
-                        🛒 Become a Seller
-                      </Link>
-                      <Link
-                        to="/profile"
-                        onClick={() => setIsMenuOpen(false)}
-                        className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
-                      >
-                        ⚙️ Profile Settings
-                      </Link>
-                    </>
-                  )}
-                  
-                  <Link
-                    to="/"
-                    onClick={() => setIsMenuOpen(false)}
-                    className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
-                  >
-                    🏠 Home
-                  </Link>
-                  <Link
-                    to="/printing"
-                    onClick={() => setIsMenuOpen(false)}
-                    className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
-                  >
-                    🖨️ Printing
-                  </Link>
-                  <Link
-                    to="/e-market"
-                    onClick={() => setIsMenuOpen(false)}
-                    className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
-                  >
-                    🛒 E-Market
-                  </Link>
-                  <Link
-                    to="/local-market"
-                    onClick={() => setIsMenuOpen(false)}
-                    className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
-                  >
-                    🏪 Local Market
-                  </Link>
-                  <Link
-                    to="/news-today"
-                    onClick={() => setIsMenuOpen(false)}
-                    className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
-                  >
-                    📰 Market News
-                  </Link>
-                  <Link
-                    to="/oldee"
-                    onClick={() => setIsMenuOpen(false)}
-                    className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
-                  >
-                    👴 Oldee
-                  </Link>
-                </nav>
-              </div>
+            )}
+
+            {/* Mobile Navigation Links */}
+            <div className="py-3 px-5">
+              <nav className="grid gap-y-4">
+                {user && (
+                  <>
+                    <Link
+                      to="/my-orders"
+                      onClick={() => setIsMenuOpen(false)}
+                      className="text-base font-medium text-blue-600 hover:text-blue-500 flex items-center"
+                    >
+                      📦 My Orders
+                    </Link>
+                    <Link
+                      to="/profile"
+                      onClick={() => setIsMenuOpen(false)}
+                      className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
+                    >
+                      ⚙️ Profile Settings
+                    </Link>
+                  </>
+                )}
+                
+                <Link
+                  to="/"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
+                >
+                  🏠 Home
+                </Link>
+                <Link
+                  to="/printing"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
+                >
+                  🖨️ Printing
+                </Link>
+                <Link
+                  to="/e-market"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
+                >
+                  🛒 E-Market
+                </Link>
+                <Link
+                  to="/local-market"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
+                >
+                  🏪 Local Market
+                </Link>
+                <Link
+                  to="/news-today"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
+                >
+                  📰 Market News
+                </Link>
+                <Link
+                  to="/oldee"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
+                >
+                  👴 Oldee
+                </Link>
+              </nav>
             </div>
             
             {/* Mobile Actions Section */}
             <div className="py-6 px-5 space-y-6">
               {/* Mobile Search */}
-              <div className="flex items-center bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                <input
-                  type="text"
-                  placeholder="Search..."
-                  className="bg-transparent outline-none text-sm flex-1 text-gray-500"
-                />
-                <button className="ml-2 p-1 bg-blue-400 text-white rounded hover:bg-blue-500">
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+              <div className="relative">
+                <div className="flex items-center bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                  <input
+                    type="text"
+                    placeholder="Search..."
+                    className="bg-transparent outline-none text-sm flex-1 text-gray-500"
+                    value={searchTerm}
+                    onChange={handleSearchChange}
+                    onFocus={() => searchTerm.length > 1 && allSearchKeywords.length > 0 && setIsSearchDropdownOpen(suggestions.length > 0)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleSearchSubmit(searchTerm);
+                      }
+                    }}
+                  />
+                  <button 
+                    onClick={() => handleSearchSubmit(searchTerm)}
+                    className="ml-2 p-1 bg-blue-400 text-white rounded hover:bg-blue-500"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                    />
-                  </svg>
-                </button>
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                      />
+                    </svg>
+                  </button>
+                </div>
+                
+                {/* Mobile Search Suggestions Dropdown (appears inside the menu) */}
+                {isSearchDropdownOpen && suggestions.length > 0 && (
+                  <div className="absolute left-0 mt-2 w-full bg-white rounded-lg shadow-lg border border-gray-200 z-50 overflow-hidden">
+                    {suggestions.map((suggestion, index) => (
+                      <button
+                        key={index}
+                        onClick={() => handleSearchSubmit(suggestion)}
+                        className="w-full px-4 py-2 text-left text-gray-700 hover:bg-gray-100 flex items-center text-sm font-medium transition-colors"
+                      >
+                        🔍 {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
+              {/* END Mobile Search */}
 
               {/* Mobile Action Buttons */}
               <div className="space-y-3">
@@ -860,7 +1003,7 @@ const Navbar = () => {
                         strokeLinejoin="round"
                         strokeWidth={2}
                         d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                      />
+                    />
                     </svg>
                     Download
                   </button>
@@ -902,186 +1045,151 @@ const Navbar = () => {
       {/* Cart Sidebar */}
       {isCartOpen && (
         <div className="fixed inset-0 z-50 overflow-hidden">
-          <div
-            className="absolute inset-0 bg-black bg-opacity-50"
-            onClick={() => setIsCartOpen(false)}
-          ></div>
-          <div className="absolute right-0 top-0 h-full w-96 bg-white shadow-xl transform transition-transform duration-300 ease-in-out">
-            <div className="flex flex-col h-full">
-              {/* Cart Header */}
-              <div className="flex items-center justify-between p-4 border-b bg-purple-600">
-                <h2 className="text-lg font-semibold text-white">
-                  Shopping Cart ({cartItemsCount})
-                </h2>
-                <button
-                  onClick={() => setIsCartOpen(false)}
-                  className="p-2 hover:bg-purple-700 rounded-full transition-colors text-white focus:outline-none"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Cart Items */}
-              <div className="flex-1 overflow-y-auto p-4">
-                {items.length === 0 ? (
-                  <div className="text-center py-8">
-                    <svg
-                      className="w-16 h-16 text-gray-300 mx-auto mb-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+          <div className="absolute inset-0 bg-black bg-opacity-50" onClick={() => setIsCartOpen(false)}></div>
+          <div className="fixed inset-y-0 right-0 max-w-full flex">
+            <div className="w-screen max-w-md">
+              <div className="h-full flex flex-col bg-white shadow-xl overflow-y-scroll">
+                {/* Header */}
+                <div className="p-6 border-b border-gray-200">
+                  <div className="flex items-start justify-between">
+                    <h2 className="text-lg font-bold text-gray-900">
+                      Your Cart
+                    </h2>
+                    <div className="ml-3 h-7 flex items-center">
+                      <button
+                        type="button"
+                        className="-m-2 p-2 text-gray-400 hover:text-gray-500"
+                        onClick={() => setIsCartOpen(false)}
                       >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M3 3h2l.4 2M7 13h10l4-8H5.4m0 0L7 13m0 0l-2.5 5M7 13l2.5 5m6-5v6a2 2 0 01-2 2H9a2 2 0 01-2-2v-6m8 0V9a2 2 0 00-2-2H9a2 2 0 00-2 2v4.01"
-                      />
-                    </svg>
-                    <p className="text-gray-500 mb-4">Your cart is empty</p>
-                    <button
-                      onClick={() => setIsCartOpen(false)}
-                      className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg transition-colors"
-                    >
-                      Continue Shopping
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {items.map((item) => (
-                      <div
-                        key={item.lineItemKey || item.id}
-                        className={`flex items-center space-x-3 p-3 border rounded-lg transition-all ${
-                          item.selected ? 'bg-blue-50 border-blue-200 shadow-sm' : 'border-gray-200 hover:shadow-md'
-                        }`}
-                      >
-                        {/* Selection Checkbox */}
-                        <input
-                          type="checkbox"
-                          checked={item.selected || false}
-                          onChange={() => toggleSelect(item.lineItemKey || item.id)}
-                          className="w-5 h-5 accent-purple-600 cursor-pointer"
-                        />
-
-                        {/* Product Image */}
-                        <img
-                          src={item.image}
-                          alt={item.name}
-                          className="w-16 h-16 object-cover rounded-md flex-shrink-0"
-                        />
-
-                        {/* Product Info */}
-                        <div className="flex-1 min-w-0">
-                          <h3 className="text-sm font-semibold text-gray-900 truncate">
-                            {item.name}
-                          </h3>
-                          <p className="text-xs text-gray-600 truncate">
-                            {item.description}
-                          </p>
-                          <p className="text-sm font-bold text-purple-600">
-                            {'₹' + item.price.toLocaleString()}
-                          </p>
-                        </div>
-
-                        {/* Quantity Control */}
-                        <div className="flex items-center space-x-2">
-                          <button
-                            onClick={() => handleSidebarQuantityDecrease(item)}
-                            className="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
-                          >
-                            <svg
-                              className="w-3 h-3"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M20 12H4"
-                              />
-                            </svg>
-                          </button>
-
-                          <span className="w-6 text-center text-sm font-medium">
-                            {item.quantity}
-                          </span>
-
-                          <button
-                            onClick={() => handleSidebarQuantityIncrease(item)}
-                            className="w-6 h-6 rounded-full bg-purple-600 hover:bg-purple-700 text-white flex items-center justify-center transition-colors"
-                          >
-                            <svg
-                              className="w-3 h-3"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-                              />
-                            </svg>
-                          </button>
-                        </div>
-
-                        {/* Delete Button */}
-                        <button
-                          onClick={() => handleSidebarRemoveItem(item.lineItemKey || item.id, item.name)}
-                          className="p-1 text-red-500 hover:text-red-700 transition-colors flex-shrink-0"
+                        <span className="sr-only">Close panel</span>
+                        <svg
+                          className="h-6 w-6"
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          aria-hidden="true"
                         >
-                          <svg
-                            className="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                            >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
-                          </svg>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Cart Footer */}
-              {items.length > 0 && (
-                <div className="border-t p-4 space-y-4 bg-gray-50">
-                  {/* Selected Items Summary */}
-                  {selectedCount > 0 && (
-                    <div className="bg-green-50 p-3 rounded-lg border border-green-200">
-                      <div className="flex justify-between items-center text-sm text-green-800">
-                        <span className="font-semibold">Selected ({selectedCount}):</span>
-                        <span className="font-bold text-lg">
-                            {'₹' + selectedTotal.toLocaleString()}
-                        </span>
-                      </div>
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M6 18L18 6M6 6l12 12"
+                          />
+                        </svg>
+                      </button>
                     </div>
-                  )}
+                  </div>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Total Items: {items.length}
+                  </p>
+                </div>
 
-                  <div className="space-y-2">
-                    {/* Checkout Button */}
+                {/* Cart Body */}
+                <div className="flex-1 px-4 py-6 sm:px-6">
+                  {items.length === 0 ? (
+                    <div className="text-center py-12">
+                      <p className="text-lg font-medium text-gray-500">Your cart is empty.</p>
+                      <button
+                        onClick={() => setIsCartOpen(false)}
+                        className="mt-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700"
+                      >
+                        Start Shopping
+                      </button>
+                    </div>
+                  ) : (
+                    <ul role="list" className="-my-6 divide-y divide-gray-200">
+                      {items.map((item) => (
+                        <li key={item.lineItemKey || item.id} className="flex py-6">
+                          {/* Checkbox */}
+                          <div className="flex items-start mr-3">
+                            <input
+                              type="checkbox"
+                              checked={item.selected || false}
+                              onChange={() => toggleSelect(item.lineItemKey || item.id)}
+                              className="h-4 w-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer"
+                            />
+                          </div>
+                          
+                          <div className="h-24 w-24 flex-shrink-0 overflow-hidden rounded-md border border-gray-200">
+                            <img
+                              src={item.image}
+                              alt={item.name}
+                              className="h-full w-full object-cover object-center"
+                            />
+                          </div>
+
+                          <div className="ml-4 flex flex-1 flex-col">
+                            <div>
+                              <div className="flex justify-between text-base font-medium text-gray-900">
+                                <h3 className="text-sm font-semibold text-gray-900 truncate">
+                                  {item.name}
+                                </h3>
+                                <p className="ml-4 text-purple-600 font-bold">
+                                  {'₹' + item.price.toLocaleString()}
+                                </p>
+                              </div>
+                              <p className="text-xs text-gray-600 truncate">
+                                {item.description}
+                              </p>
+                            </div>
+
+                            {/* Quantity Control and Remove */}
+                            <div className="flex flex-1 items-end justify-between text-sm mt-2">
+                              {/* Quantity Control */}
+                              <div className="flex items-center space-x-2">
+                                <button
+                                  onClick={() => handleSidebarQuantityDecrease(item)}
+                                  className="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+                                >
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                                  </svg>
+                                </button>
+                                <span className="font-medium text-gray-700">
+                                  {item.quantity}
+                                </span>
+                                <button
+                                  onClick={() => handleSidebarQuantityIncrease(item)}
+                                  className="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+                                >
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                  </svg>
+                                </button>
+                              </div>
+
+                              {/* Remove Button */}
+                              <div className="flex">
+                                <button
+                                  type="button"
+                                  className="font-medium text-red-600 hover:text-red-500"
+                                  onClick={() => handleSidebarRemoveItem(item.lineItemKey || item.id, item.name)}
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                {/* Footer and Checkout */}
+                {items.length > 0 && (
+                  <div className="border-t border-gray-200 px-4 py-6 sm:px-6 space-y-3">
+                    <div className="flex justify-between text-base font-medium text-gray-900">
+                      <p>Selected Subtotal</p>
+                      <p className="text-xl font-bold text-green-600">
+                        {'₹' + selectedTotal.toLocaleString()}
+                      </p>
+                    </div>
+                    <p className="mt-0.5 text-sm text-gray-500">
+                      Shipping and taxes calculated at checkout.
+                    </p>
+
                     <button
                       onClick={handleSidebarCheckout}
                       disabled={selectedCount === 0}
@@ -1100,21 +1208,21 @@ const Navbar = () => {
                     >
                       Continue Shopping
                     </button>
+                    
+                    <button
+                      onClick={() => {
+                        if (window.confirm("Are you sure you want to clear your cart?")) {
+                          clearCart();
+                          setIsCartOpen(false);
+                        }
+                      }}
+                      className="w-full bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg font-medium transition-colors text-sm"
+                    >
+                      Clear Cart
+                    </button>
                   </div>
-
-                  <button
-                    onClick={() => {
-                      if (window.confirm("Are you sure you want to clear your cart?")) {
-                        clearCart();
-                        setIsCartOpen(false);
-                      }
-                    }}
-                    className="w-full bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg font-medium transition-colors text-sm"
-                  >
-                    Clear Cart
-                  </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>

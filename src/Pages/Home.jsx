@@ -2,22 +2,41 @@ import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useCart } from '../context/CartContext';
 import { db } from '../../firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy } from 'firebase/firestore';
 
 const Home = () => {
   const { addToCart } = useCart();
   const [products, setProducts] = useState([]);
+  const [posters, setPosters] = useState([]);
+  const [slides, setSlides] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
-  
-  const images = [
-    "https://trios.qa/wp-content/uploads/2024/10/Printing.jpeg",
-    "https://simplife.ae/uploads/business_sliders/slider-1692617396-951.jpg",
-    "https://www.indusdubai.com/wp-content/uploads/2021/10/slide44-scaled.jpg",
-    "https://descoonline.com/wp-content/uploads/2020/10/Same-Day-Printing-in-Dubai.jpg",
-    "https://macedoniaprojects.co.zw/wp-content/uploads/2023/12/Digital-Printing-Services.jpg",
-  ];
+  const [postersLoading, setPostersLoading] = useState(true);
+  const [slidesLoading, setSlidesLoading] = useState(true);
   const [current, setCurrent] = useState(0);
+
+  // Helper function to format poster date
+  const formatPosterDate = (timestamp) => {
+    if (!timestamp) return 'No date';
+    
+    try {
+      // If it's a Firebase timestamp
+      if (timestamp.toDate) {
+        const date = timestamp.toDate();
+        return date.toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric'
+        });
+      }
+      
+      // If it's already a string or other format
+      return timestamp;
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return 'Invalid date';
+    }
+  };
 
   // Fetch real products from Firebase
   useEffect(() => {
@@ -73,13 +92,153 @@ const Home = () => {
     fetchProducts();
   }, []);
 
+  // Fetch posters from Firebase
+  useEffect(() => {
+    const fetchPosters = async () => {
+      try {
+        setPostersLoading(true);
+        const postersCollectionRef = collection(db, 'posters');
+        const q = query(postersCollectionRef, orderBy('createdAt', 'desc'));
+        const querySnapshot = await getDocs(q);
+        
+        const fetchedPosters = [];
+        querySnapshot.forEach((doc) => {
+          const posterData = doc.data();
+          if (posterData && posterData.title) {
+            fetchedPosters.push({
+              ...posterData,
+              id: doc.id,
+              formattedDate: posterData.date || formatPosterDate(posterData.createdAt)
+            });
+          }
+        });
+
+        console.log('Fetched posters from Firebase:', fetchedPosters);
+        setPosters(fetchedPosters);
+        
+      } catch (err) {
+        console.error('Error fetching posters from Firebase:', err);
+        // You can choose to handle this error separately or use the main error state
+      } finally {
+        setPostersLoading(false);
+      }
+    };
+
+    fetchPosters();
+  }, []);
+
+  // Fetch slides from Firebase
+  useEffect(() => {
+    const fetchSlides = async () => {
+      try {
+        setSlidesLoading(true);
+        const slidesCollectionRef = collection(db, 'slides');
+        const q = query(slidesCollectionRef, orderBy('order', 'asc'));
+        const querySnapshot = await getDocs(q);
+        
+        const fetchedSlides = [];
+        querySnapshot.forEach((doc) => {
+          const slideData = doc.data();
+          if (slideData && slideData.imageUrl) {
+            fetchedSlides.push({
+              ...slideData,
+              id: doc.id,
+              alt: slideData.alt || slideData.title || `Slide ${doc.id}`,
+              // Ensure we have title and subtitle
+              title: slideData.title || "Welcome to L-Mart",
+              subtitle: slideData.subtitle || "A Small Attempt at Online Shopping with all"
+            });
+          }
+        });
+
+        console.log('Fetched slides from Firebase:', fetchedSlides);
+        
+        // If no slides in Firebase, use default slides
+        if (fetchedSlides.length === 0) {
+          setSlides([
+            {
+              id: 'default-1',
+              imageUrl: "https://trios.qa/wp-content/uploads/2024/10/Printing.jpeg",
+              alt: "Printing Services",
+              title: "We Provide Offset Printing & Digital Printing",
+              subtitle: "Large F.M. (c.o.m.epso.e.F.M.R.) are available here"
+            },
+            {
+              id: 'default-2',
+              imageUrl: "https://simplife.ae/uploads/business_sliders/slider-1692617396-951.jpg",
+              alt: "Digital Printing",
+              title: "Premium Quality Printing Services",
+              subtitle: "High-quality prints for all your business needs"
+            },
+            {
+              id: 'default-3',
+              imageUrl: "https://www.indusdubai.com/wp-content/uploads/2021/10/slide44-scaled.jpg",
+              alt: "Office Supplies",
+              title: "Complete Office Solutions",
+              subtitle: "Everything you need for your office in one place"
+            },
+            {
+              id: 'default-4',
+              imageUrl: "https://descoonline.com/wp-content/uploads/2020/10/Same-Day-Printing-in-Dubai.jpg",
+              alt: "Fast Delivery",
+              title: "Same Day Printing & Delivery",
+              subtitle: "Get your prints delivered on the same day"
+            },
+            {
+              id: 'default-5',
+              imageUrl: "https://macedoniaprojects.co.zw/wp-content/uploads/2023/12/Digital-Printing-Services.jpg",
+              alt: "Digital Solutions",
+              title: "Digital Printing Services",
+              subtitle: "Modern digital printing for modern businesses"
+            }
+          ]);
+        } else {
+          setSlides(fetchedSlides);
+        }
+        
+      } catch (err) {
+        console.error('Error fetching slides from Firebase:', err);
+        // Fallback to default slides if Firebase fails
+        setSlides([
+          {
+            id: 'default-1',
+            imageUrl: "https://trios.qa/wp-content/uploads/2024/10/Printing.jpeg",
+            alt: "Printing Services",
+            title: "We Provide Offset Printing & Digital Printing",
+            subtitle: "Large F.M. (c.o.m.epso.e.F.M.R.) are available here"
+          },
+          {
+            id: 'default-2',
+            imageUrl: "https://simplife.ae/uploads/business_sliders/slider-1692617396-951.jpg",
+            alt: "Digital Printing",
+            title: "Premium Quality Printing Services",
+            subtitle: "High-quality prints for all your business needs"
+          },
+          {
+            id: 'default-3',
+            imageUrl: "https://www.indusdubai.com/wp-content/uploads/2021/10/slide44-scaled.jpg",
+            alt: "Office Supplies",
+            title: "Complete Office Solutions",
+            subtitle: "Everything you need for your office in one place"
+          }
+        ]);
+      } finally {
+        setSlidesLoading(false);
+      }
+    };
+
+    fetchSlides();
+  }, []);
+
   // Auto change every 4 sec
   useEffect(() => {
+    if (slides.length === 0) return;
+    
     const interval = setInterval(() => {
-      setCurrent((prev) => (prev === images.length - 1 ? 0 : prev + 1));
+      setCurrent((prev) => (prev === slides.length - 1 ? 0 : prev + 1));
     }, 4000);
     return () => clearInterval(interval);
-  }, [images.length]);
+  }, [slides.length]);
 
   const featuredProducts = products.filter((product) => product.featured);
   const otherProducts = products.filter((product) => !product.featured);
@@ -123,30 +282,62 @@ const Home = () => {
 
       {/* Hero Section */}
       <div className="relative w-full h-[70vh] sm:h-[75vh] md:h-[80vh] lg:h-[85vh] xl:h-[90vh] overflow-hidden">
-        {images.map((img, index) => (
-          <div
-            key={index}
-            className={`absolute inset-0 transition-opacity duration-1000 ${
-              index === current ? "opacity-100" : "opacity-0"
-            }`}
-          >
-            <img
-              src={img}
-              alt={`Slide ${index + 1}`}
-              className="w-full h-full object-cover"
-            />
+        {slidesLoading ? (
+          <div className="absolute inset-0 bg-gray-200 animate-pulse flex items-center justify-center">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-gray-600">Loading slides...</p>
+            </div>
           </div>
-        ))}
+        ) : slides.length > 0 ? (
+          slides.map((slide, index) => (
+            <div
+              key={slide.id}
+              className={`absolute inset-0 transition-opacity duration-1000 ${
+                index === current ? "opacity-100" : "opacity-0"
+              }`}
+            >
+              <img
+                src={slide.imageUrl}
+                alt={slide.alt}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  console.log('Slide image failed to load:', slide.alt, 'URL:', slide.imageUrl);
+                  e.target.src = 'https://placehold.co/1920x1080?text=Slide+Image';
+                }}
+              />
+            </div>
+          ))
+        ) : (
+          <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
+            <p className="text-white text-xl">No slides available</p>
+          </div>
+        )}
 
         {/* Welcome Text Overlay */}
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-40">
           <div className="text-center text-white px-4 mb-6 sm:mb-8 lg:mb-10">
-            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold mb-3 sm:mb-4 lg:mb-6 animate-fade-in leading-tight">
-              Welcome to L-Mart
-            </h1>
-            <p className="text-lg sm:text-xl md:text-2xl lg:text-3xl xl:text-4xl font-medium animate-slide-up leading-relaxed">
-              A Small Attempt at Online Shopping with all
-            </p>
+            {slides.length > 0 && slides[current] ? (
+              <>
+                <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold mb-3 sm:mb-4 lg:mb-6 animate-fade-in leading-tight">
+                  {slides[current].title}
+                </h1>
+                {slides[current].subtitle && (
+                  <p className="text-lg sm:text-xl md:text-2xl lg:text-3xl xl:text-4xl font-medium animate-slide-up leading-relaxed">
+                    {slides[current].subtitle}
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold mb-3 sm:mb-4 lg:mb-6 animate-fade-in leading-tight">
+                  Welcome to L-Mart
+                </h1>
+                <p className="text-lg sm:text-xl md:text-2xl lg:text-3xl xl:text-4xl font-medium animate-slide-up leading-relaxed">
+                  A Small Attempt at Online Shopping with all
+                </p>
+              </>
+            )}
           </div>
           
           {/* Product Boxes Overlay with Auto Scroll */}
@@ -225,18 +416,20 @@ const Home = () => {
           </div>
         </div>
 
-        {/* Dots Indicator */}
-        <div className="absolute bottom-3 sm:bottom-4 md:bottom-6 lg:bottom-8 left-1/2 transform -translate-x-1/2 flex space-x-2">
-          {images.map((_, index) => (
-            <button
-              key={index}
-              className={`w-2 h-2 sm:w-3 sm:h-3 lg:w-4 lg:h-4 rounded-full transition-colors ${
-                index === current ? "bg-white" : "bg-gray-400"
-              }`}
-              onClick={() => setCurrent(index)}
-            ></button>
-          ))}
-        </div>
+        {/* Dots Indicator - only show if we have slides */}
+        {slides.length > 0 && (
+          <div className="absolute bottom-3 sm:bottom-4 md:bottom-6 lg:bottom-8 left-1/2 transform -translate-x-1/2 flex space-x-2">
+            {slides.map((_, index) => (
+              <button
+                key={index}
+                className={`w-2 h-2 sm:w-3 sm:h-3 lg:w-4 lg:h-4 rounded-full transition-colors ${
+                  index === current ? "bg-white" : "bg-gray-400"
+                }`}
+                onClick={() => setCurrent(index)}
+              ></button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Categories Section */}
@@ -655,6 +848,70 @@ const Home = () => {
               </Link>
             ))}
           </div>
+        </div>
+      </div>
+
+      {/* Posters Section */}
+      <div className="py-8 bg-white">
+        <div className="container-responsive">
+          <div className="text-center mb-6">
+            <h2 className="text-3xl font-bold text-gray-900 mb-4 animate-fade-in">
+              Featured Posters
+            </h2>
+            <p className="text-lg text-gray-600 animate-slide-up">
+              Latest promotional materials and announcements
+            </p>
+          </div>
+
+          {postersLoading ? (
+            <div className="flex justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+          ) : posters.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+              {posters.map((poster) => (
+                <div 
+                  key={poster.id} 
+                  className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+                >
+                  {/* Poster Image */}
+                  <div className="relative h-48">
+                    <img
+                      src={poster.imageUrl}
+                      alt={poster.title}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        console.log('Poster image failed to load:', poster.title);
+                        e.target.src = 'https://placehold.co/400x300?text=Poster+Image';
+                      }}
+                    />
+                  </div>
+                  
+                  {/* Poster Info */}
+                  <div className="p-4">
+                    <h3 className="font-semibold text-gray-900 mb-2 text-lg truncate">
+                      {poster.title}
+                    </h3>
+                    
+                    <div className="flex items-center justify-between text-sm text-gray-500 mb-3">
+                      <span>Posted: {poster.formattedDate || poster.date || formatPosterDate(poster.createdAt)}</span>
+                      <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">
+                        B2B
+                      </span>
+                    </div>
+                    
+                    <div className="text-xs text-gray-400">
+                      ID: {poster.posterId || poster.id}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <p className="text-gray-500">No posters available at the moment.</p>
+            </div>
+          )}
         </div>
       </div>
 

@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, query, getDocs, orderBy, doc, updateDoc, Timestamp } from 'firebase/firestore'; 
+// UPDATED: Added 'addDoc' to the imports for creating new request documents
+import { collection, query, getDocs, orderBy, doc, updateDoc, Timestamp, addDoc } from 'firebase/firestore'; 
 import { db } from '../../firebase';
 
-// Return Order Form Component
+// =======================
+// RETURN ORDER FORM (MODIFIED to create a separate document)
+// =======================
 const ReturnOrderForm = ({ order, userId, onClose, onSuccess }) => {
   const [reason, setReason] = useState('');
   const [description, setDescription] = useState('');
@@ -30,15 +33,36 @@ const ReturnOrderForm = ({ order, userId, onClose, onSuccess }) => {
     setError('');
 
     try {
+      // 1. **CREATE RETURN REQUEST DOCUMENT IN SUBCOLLECTION**
+      // Path: users/{userId}/returnRequests/{newDocId}
+      const returnRequestCollectionRef = collection(db, "users", userId, "returnRequests"); 
+      
+      const newReturnRequestRef = await addDoc(returnRequestCollectionRef, {
+        orderId: order.orderId, // Link to the original order ID (if available)
+        firestoreOrderId: order.id, // Firestore document ID of the original order
+        reason,
+        description,
+        requestedAt: Timestamp.now(),
+        status: 'pending', // Status for the request document itself
+        items: order.items.map(item => ({ 
+            id: item.id, 
+            name: item.name, 
+            quantity: item.quantity,
+            price: item.price
+        })),
+        returnRequestId: newReturnRequestRef.id // Store the new ID
+      });
+
+      // 2. **UPDATE MAIN ORDER STATUS**
+      // This is crucial for updating the status shown on the My Orders page
       const orderRef = doc(db, "users", userId, "orders", order.id);
       
       await updateDoc(orderRef, {
-        status: 'return_requested',
+        status: 'return_requested', // Update the main order status
+        returnRequestId: newReturnRequestRef.id, // Reference the new request document
         returnRequest: {
-          reason,
-          description,
-          requestedAt: Timestamp.now(),
-          status: 'pending'
+            reason,
+            status: 'pending' 
         },
         updatedAt: Timestamp.now()
       });
@@ -152,7 +176,9 @@ const ReturnOrderForm = ({ order, userId, onClose, onSuccess }) => {
   );
 };
 
-// Cancel Order Form Component
+// =======================
+// CANCEL ORDER FORM (MODIFIED to create a separate document)
+// =======================
 const CancelOrderForm = ({ order, userId, onClose, onSuccess }) => {
   const [reason, setReason] = useState('');
   const [otherReason, setOtherReason] = useState('');
@@ -177,14 +203,31 @@ const CancelOrderForm = ({ order, userId, onClose, onSuccess }) => {
 
     setLoading(true);
     setError('');
+    
+    const finalReason = reason === 'Other' ? otherReason : reason;
 
     try {
+      // 1. **CREATE CANCELLATION REQUEST DOCUMENT IN SUBCOLLECTION**
+      // Path: users/{userId}/cancellationRequests/{newDocId}
+      const cancellationCollectionRef = collection(db, "users", userId, "cancellationRequests"); 
+      
+      const newCancellationRequestRef = await addDoc(cancellationCollectionRef, {
+        orderId: order.orderId, // Link to the original order ID (if available)
+        firestoreOrderId: order.id, // Firestore document ID of the order
+        reason: finalReason,
+        requestedAt: Timestamp.now(),
+        status: 'completed', // Assuming immediate cancellation in this flow
+        amount: order.amount
+      });
+      
+      // 2. **UPDATE MAIN ORDER STATUS**
       const orderRef = doc(db, "users", userId, "orders", order.id);
       
       await updateDoc(orderRef, {
         status: 'cancelled',
+        cancellationId: newCancellationRequestRef.id, // Reference the new request document
         cancellation: {
-          reason: reason === 'Other' ? otherReason : reason,
+          reason: finalReason,
           cancelledAt: Timestamp.now()
         },
         updatedAt: Timestamp.now()
@@ -302,7 +345,9 @@ const CancelOrderForm = ({ order, userId, onClose, onSuccess }) => {
   );
 };
 
-// Main MyOrders Component
+// =======================
+// MAIN MY ORDERS PAGE
+// =======================
 const MyOrders = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -311,8 +356,7 @@ const MyOrders = () => {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const navigate = useNavigate();
   
-  // 🔑 Get logged in user ID
-  const currentUserId = localStorage.getItem('token'); 
+  const currentUserId = localStorage.getItem('token');
 
   const fetchOrders = async () => {
     if (!currentUserId) {
@@ -321,9 +365,8 @@ const MyOrders = () => {
     }
     
     try {
-      // 🔥 Fetch orders subcollection
+      // Fetch orders from the 'orders' subcollection under the user
       const ordersSubCollectionRef = collection(db, "users", currentUserId, "orders");
-      
       const q = query(
         ordersSubCollectionRef,
         orderBy("createdAt", "desc")
@@ -351,12 +394,12 @@ const MyOrders = () => {
     const status = order.status?.toLowerCase();
     const nonReturnableStatuses = ['cancelled', 'returned', 'return_requested', 'return_rejected'];
     
-    // Check if order was delivered within last 7 days
+    // Check if order was delivered within last 7 days (or your custom return window)
     const orderDate = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt);
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     
-    return !nonReturnableStatuses.includes(status) && orderDate > sevenDaysAgo;
+    return !nonReturnableStatuses.includes(status) && status === 'delivered' && orderDate > sevenDaysAgo;
   };
 
   const isOrderCancellable = (order) => {
@@ -376,12 +419,12 @@ const MyOrders = () => {
   };
 
   const handleReturnSuccess = () => {
-    fetchOrders(); // Refresh orders
+    fetchOrders();
     alert('Return request submitted successfully! We will contact you within 24 hours.');
   };
 
   const handleCancelSuccess = () => {
-    fetchOrders(); // Refresh orders
+    fetchOrders();
     alert('Order cancelled successfully! Refund will be processed within 5-7 business days.');
   };
 
