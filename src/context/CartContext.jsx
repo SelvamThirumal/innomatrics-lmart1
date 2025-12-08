@@ -17,14 +17,17 @@ const ACTIONS = {
     UPDATE_CUSTOMIZATION: "UPDATE_CUSTOMIZATION",
 };
 
-// Generate unique key for each cart item
+// Generate unique key for each cart item based on ID and customizations
 const getLineItemKey = (item) => {
+    // Collect all relevant customization fields
     const customFields = [
         item.selectedColor,
         item.selectedSize,
         item.selectedMaterial,
         item.selectedRam,
     ].filter(Boolean);
+    
+    // Create a unique key using the base product ID and its customizations
     return `${item.id}_${customFields.join("_")}`;
 };
 
@@ -32,12 +35,15 @@ const getLineItemKey = (item) => {
 const reducer = (state, action) => {
     switch (action.type) {
         case ACTIONS.ADD: {
+            // New item is sanitized before being passed to the reducer
             const newItem = { ...action.payload, quantity: action.payload.quantity || 1, selected: true };
             const newLineKey = getLineItemKey(newItem);
 
+            // Check if an item with the same ID and customization already exists
             const exist = state.items.find((x) => getLineItemKey(x) === newLineKey);
 
             if (exist) {
+                // If it exists, update the quantity
                 const updatedItems = state.items.map((x) =>
                     getLineItemKey(x) === newLineKey ? { ...x, quantity: x.quantity + newItem.quantity } : x
                 );
@@ -45,35 +51,21 @@ const reducer = (state, action) => {
                 return {
                     ...state,
                     items: updatedItems,
-                    notification: { 
-                        show: true, 
-                        message: `"${newItem.name}" quantity updated in cart!`,
-                        type: "success"
-                    },
                 };
             }
 
+            // If it's a new item (or new customization), add it to the cart
             return {
                 ...state,
                 items: [...state.items, { ...newItem, lineItemKey: newLineKey }],
-                notification: { 
-                    show: true, 
-                    message: `"${newItem.name}" added to cart successfully!`,
-                    type: "success"
-                },
             };
         }
 
         case ACTIONS.REMOVE:
-            const removedItem = state.items.find(x => (x.lineItemKey || x.id) === action.payload.lineItemKey);
             return {
                 ...state,
+                // Filter out the item to be removed
                 items: state.items.filter((x) => (x.lineItemKey || x.id) !== action.payload.lineItemKey),
-                notification: { 
-                    show: true, 
-                    message: `"${removedItem?.name || 'Item'}" removed from cart`,
-                    type: "info"
-                },
             };
 
         case ACTIONS.UPDATE_QTY:
@@ -82,10 +74,11 @@ const reducer = (state, action) => {
                 items: state.items
                     .map((x) =>
                         (x.lineItemKey || x.id) === action.payload.lineItemKey
-                            ? { ...x, quantity: action.payload.quantity }
+                            ? { ...x, quantity: action.payload.quantity } // Update the quantity
                             : x
                     )
-                    .filter((x) => x.quantity > 0),
+                    // Remove items if quantity drops to 0 or less
+                    .filter((x) => x.quantity > 0), 
             };
 
         case ACTIONS.UPDATE_CUSTOMIZATION: {
@@ -95,19 +88,22 @@ const reducer = (state, action) => {
 
             const updated = { ...item, ...custom };
             const newKey = getLineItemKey(updated);
+            // Check for a mergeable item (same item type, new customization)
             const exist = state.items.find((x) => getLineItemKey(x) === newKey && x.lineItemKey !== oldKey);
 
             if (exist) {
+                // If a merge is necessary (e.g., changing RAM option that already exists)
                 return {
                     ...state,
                     items: state.items
-                        .filter((x) => x.lineItemKey !== oldKey)
+                        .filter((x) => x.lineItemKey !== oldKey) // Remove old item
                         .map((x) =>
                             getLineItemKey(x) === newKey ? { ...x, quantity: x.quantity + updated.quantity } : x
-                        ),
+                        ), // Update quantity of existing item
                 };
             }
 
+            // Otherwise, update the customization and key of the existing item
             return {
                 ...state,
                 items: state.items.map((x) =>
@@ -117,6 +113,7 @@ const reducer = (state, action) => {
         }
 
         case ACTIONS.TOGGLE_SELECT:
+            // Toggle the selected status for checkout
             return {
                 ...state,
                 items: state.items.map((x) =>
@@ -125,20 +122,18 @@ const reducer = (state, action) => {
             };
 
         case ACTIONS.SELECT_ALL:
+            // Mark all items as selected for checkout
             return { ...state, items: state.items.map((x) => ({ ...x, selected: true })) };
 
         case ACTIONS.DESELECT_ALL:
+            // Mark all items as deselected
             return { ...state, items: state.items.map((x) => ({ ...x, selected: false })) };
 
         case ACTIONS.CLEAR:
+            // Empty the cart
             return { 
                 ...state, 
                 items: [], 
-                notification: { 
-                    show: true, 
-                    message: "Cart cleared successfully",
-                    type: "info"
-                } 
             };
 
         case ACTIONS.LOAD:
@@ -178,14 +173,22 @@ const initialState = {
     } 
 };
 
-// Sanitize item before adding
+// Sanitize item before adding to ensure required fields are present and valid
 const sanitizeItem = (raw) => {
     const id = raw.id ?? raw._id ?? `item_unspecified`;
+    
+    const sanitizedPrice = Math.max(0, Number(raw.price) || 0);
+
+    // CRITICAL FIX: 2. Add a console warning for missing price data (for developer debugging)
+    if (sanitizedPrice === 0 && raw.price !== 0 && raw.price !== undefined && raw.price !== null) {
+        console.warn(`Product "${raw.name ?? id}" added with a price of 0. Original value was:`, raw.price);
+        console.warn("FIX: The original product object is missing a valid 'price' field or it is an empty string/NaN. Please check the component calling 'addToCart'.");
+    }
 
     const sanitized = {
         id,
         name: raw.name ?? raw.title ?? "Unnamed Product",
-        price: Math.max(0, Number(raw.price) || 0),
+        price: sanitizedPrice, // Use the calculated and sanitized price
         quantity: Math.max(1, Math.min(99, Number(raw.quantity) || 1)),
         selected: typeof raw.selected === "boolean" ? raw.selected : true,
         image: raw.image ?? raw.img ?? raw.mainImage ?? "/default-product-image.png",
@@ -194,7 +197,8 @@ const sanitizeItem = (raw) => {
         selectedSize: raw.selectedSize ?? raw.size ?? "",
         selectedMaterial: raw.selectedMaterial ?? raw.material ?? "",
         selectedRam: raw.selectedRam ?? raw.ram ?? "",
-        originalPrice: raw.originalPrice ?? raw.price ?? 0,
+        // Use the sanitized price as a fallback for originalPrice
+        originalPrice: raw.originalPrice ?? sanitizedPrice,
     };
 
     sanitized.lineItemKey = getLineItemKey(sanitized);
@@ -205,36 +209,29 @@ const sanitizeItem = (raw) => {
 export const CartProvider = ({ children }) => {
     const [state, dispatch] = useReducer(reducer, initialState);
 
-    // Load from storage
+    // Load cart items from local storage on component mount
     useEffect(() => {
         try {
-            const saved = JSON.parse(localStorage.getItem("cartItems"));
+            const saved = JSON.parse(localStorage.getItem("cartItems")); 
             if (Array.isArray(saved)) {
+                // Sanitize items again upon loading to ensure consistency
                 const items = saved.map((i) => sanitizeItem(i));
                 dispatch({ type: ACTIONS.LOAD, payload: items });
             }
         } catch {
-            localStorage.removeItem("cartItems");
+            localStorage.removeItem("cartItems"); // Clear corrupted storage
         }
     }, []);
 
-    // Save to storage
+    // Save cart items to local storage whenever state.items changes
     useEffect(() => {
         const timer = setTimeout(() => {
             localStorage.setItem("cartItems", JSON.stringify(state.items));
-        }, 50);
+        }, 50); // Debounce storage write
         return () => clearTimeout(timer);
     }, [state.items]);
 
-    // Auto hide toast
-    useEffect(() => {
-        if (state.notification.show) {
-            const timer = setTimeout(() => dispatch({ type: ACTIONS.HIDE_NOTIFICATION }), 3000);
-            return () => clearTimeout(timer);
-        }
-    }, [state.notification.show]);
-
-    // ACTION FUNCTIONS
+    // ACTION FUNCTIONS - Wrapper functions for dispatching actions
     const addToCart = (product) => dispatch({ type: ACTIONS.ADD, payload: sanitizeItem(product) });
     const removeFromCart = (lineItemKey) => dispatch({ type: ACTIONS.REMOVE, payload: { lineItemKey } });
     const updateQuantity = (lineItemKey, quantity) =>
@@ -249,7 +246,7 @@ export const CartProvider = ({ children }) => {
         dispatch({ type: ACTIONS.SHOW_NOTIFICATION, payload: { message, type } });
     const hideNotification = () => dispatch({ type: ACTIONS.HIDE_NOTIFICATION });
 
-    // GETTERS
+    // GETTERS - Helper functions to retrieve calculated data
     const getSelectedItems = () => state.items.filter((x) => x.selected);
     const getSelectedTotal = () => getSelectedItems().reduce((t, x) => t + x.price * x.quantity, 0);
     const getCartItemsCount = () => state.items.reduce((t, x) => t + x.quantity, 0);
@@ -277,39 +274,10 @@ export const CartProvider = ({ children }) => {
     return (
         <CartContext.Provider value={value}>
             {children}
-            {/* Enhanced Notification Component */}
-            {state.notification.show && (
-                <div className={`fixed top-4 right-4 z-50 animate-slide-in`}>
-                    <div className={`px-6 py-3 rounded-lg shadow-lg flex items-center space-x-2 ${
-                        state.notification.type === "success" ? "bg-green-500 text-white" :
-                        state.notification.type === "error" ? "bg-red-500 text-white" :
-                        "bg-blue-500 text-white"
-                    }`}>
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            {state.notification.type === "success" ? (
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            ) : state.notification.type === "error" ? (
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            ) : (
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            )}
-                        </svg>
-                        <span className="font-medium">{state.notification.message}</span>
-                        <button 
-                            onClick={hideNotification}
-                            className="ml-2 hover:opacity-70"
-                        >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        </button>
-                    </div>
-                </div>
-            )}
         </CartContext.Provider>
     );
 };
 
-// Custom hook
+// Custom hook to consume the cart context
 export const useCart = () => useContext(CartContext);
 export default CartContext;

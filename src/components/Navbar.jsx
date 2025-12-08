@@ -2,14 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import logo from "../assets/newadd.png";
-
-// =========================================================================
-// 1. FIREBASE IMPORTS: Changed path to '../firebase.js'
-// =========================================================================
-import { db } from "../../firebase"; // Import 'db' from the file you provided
-import { collection, getDocs } from "firebase/firestore"; 
-// =========================================================================
-
+import { db } from "../../firebase";
+import { collection, getDocs, addDoc, doc, getDoc, updateDoc, setDoc } from "firebase/firestore";
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -19,17 +13,10 @@ const Navbar = () => {
   const [selectedCount, setSelectedCount] = useState(0);
   const [user, setUser] = useState(null);
   
-  // STATE: Stores the dynamically fetched keywords
-  const [allSearchKeywords, setAllSearchKeywords] = useState([]); 
-  
-  const [searchTerm, setSearchTerm] = useState("");
-  const [suggestions, setSuggestions] = useState([]);
-  const [isSearchDropdownOpen, setIsSearchDropdownOpen] = useState(false);
-  
   const navigate = useNavigate();
   const location = useLocation();
   const dropdownRef = useRef(null);
-  const searchDropdownRef = useRef(null);
+  const searchRef = useRef(null);
   
   const {
     getCartItemsCount,
@@ -43,53 +30,66 @@ const Navbar = () => {
   
   const cartItemsCount = getCartItemsCount();
 
-  // =========================================================================
-  // 2. FUNCTION TO FETCH KEYWORDS FROM FIRESTORE
-  // =========================================================================
-  const fetchKeywords = useCallback(async () => {
-    try {
-      // Reference to the 'products' collection
-      const productsCollectionRef = collection(db, "products");
-      const productSnapshot = await getDocs(productsCollectionRef);
-      
-      const keywordsSet = new Set();
-      
-      productSnapshot.forEach((doc) => {
-        const data = doc.data();
-        // Check if the document has a 'searchKeywords' array
-        if (Array.isArray(data.searchKeywords)) {
-          // Add all keywords to the Set to ensure uniqueness
-          data.searchKeywords.forEach(keyword => {
-            if (typeof keyword === 'string' && keyword.trim() !== "") {
-              keywordsSet.add(keyword.toLowerCase());
-            }
-          });
-        }
-        // Optional: Also add the product name and description as keywords
-        if (data.name) keywordsSet.add(data.name.toLowerCase());
-        if (data.description) {
-            data.description.toLowerCase().split(' ').forEach(word => {
-                // Simplified word extraction for description
-                if (word.length > 2) keywordsSet.add(word.replace(/[^a-z0-9]/g, ''));
-            });
-        }
-      });
-      
-      // Convert the Set back to an array and store it in state
-      setAllSearchKeywords(Array.from(keywordsSet).sort());
-      console.log(`Fetched ${keywordsSet.size} unique search keywords.`);
+  // Search Auto Complete States
+  const [query, setQuery] = useState("");
+  const [allProducts, setAllProducts] = useState([]);
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
-    } catch (error) {
-      console.error("Error fetching search keywords from Firebase. Check Firestore connection/permissions.", error);
-    }
+  // Fetch products for search
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const ref = collection(db, "products");
+        const snap = await getDocs(ref);
+
+        const list = snap.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+
+        setAllProducts(list);
+      } catch (err) {
+        console.log("Error fetching products:", err);
+      }
+    };
+
+    fetchData();
   }, []);
 
-  // =========================================================================
-  // 3. EFFECT HOOK TO RUN KEYWORD FETCHING ONCE ON MOUNT
-  // =========================================================================
+  // Live suggestions
   useEffect(() => {
-    fetchKeywords();
-  }, [fetchKeywords]); 
+    if (!query.trim()) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    const q = query.toLowerCase();
+
+    const filtered = allProducts.filter((p) =>
+      p.searchKeywords?.some((k) => k.toLowerCase().includes(q)) ||
+      p.name?.toLowerCase().includes(q) ||
+      p.productTag?.toLowerCase().includes(q)
+    );
+
+    setSuggestions(filtered.slice(0, 6)); // show max 6
+    setShowSuggestions(filtered.length > 0);
+  }, [query, allProducts]);
+
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (searchRef.current && !searchRef.current.contains(event.target)) {
+        setShowSuggestions(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   // Check if user is logged in
   useEffect(() => {
@@ -141,26 +141,12 @@ const Navbar = () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [isUserDropdownOpen]);
-  
-  // Close search dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutsideSearch = (event) => {
-      if (isSearchDropdownOpen && searchDropdownRef.current && !searchDropdownRef.current.contains(event.target)) {
-        setIsSearchDropdownOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutsideSearch);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutsideSearch);
-    };
-  }, [isSearchDropdownOpen]);
 
   // Fixed cart icon click - only opens sidebar
   const handleCartIconClick = () => {
     setIsCartOpen(true);
     setIsUserDropdownOpen(false);
-    setIsSearchDropdownOpen(false); // Close search dropdown on cart open
+    setShowSuggestions(false);
   };
 
   // User icon click handler
@@ -215,50 +201,222 @@ const Navbar = () => {
 
   // Handle item removal from sidebar
   const handleSidebarRemoveItem = (itemId, itemName) => {
-    if (window.confirm(`Are you sure you want to remove "${itemName}" from your cart?`)) {
-      removeFromCart(itemId);
-    }
+    removeFromCart(itemId);
   };
   
-  // --- SEARCH HANDLERS - USES DYNAMIC KEYWORDS ---
-  const handleSearchChange = (event) => {
-    const value = event.target.value;
-    setSearchTerm(value);
-    
-    const lowerCaseValue = value.toLowerCase();
-    
-    // Only show suggestions if the term has more than 1 character and keywords are loaded
-    if (value.length > 1 && allSearchKeywords.length > 0) {
-      
-      const filteredSuggestions = allSearchKeywords
-        .filter(keyword => 
-            keyword.startsWith(lowerCaseValue) && // 1. Must start with the input
-            !/\d/.test(keyword) // 2. FIX: Exclude any keyword containing a digit (e.g., 'tshirt0')
-        ) 
-        // 3. Sort shorter, more relevant matches first
-        .sort((a, b) => a.length - b.length)
-        .slice(0, 8); 
-        
-      setSuggestions(filteredSuggestions);
-      setIsSearchDropdownOpen(filteredSuggestions.length > 0);
-    } else {
-      setSuggestions([]);
-      setIsSearchDropdownOpen(false);
+  // --- SEARCH HANDLER ---
+  const handleSearch = (searchQuery) => {
+    if (searchQuery.trim()) {
+      navigate(`/search-results?q=${encodeURIComponent(searchQuery.trim())}`);
+      setQuery("");
+      setShowSuggestions(false);
+      setIsMenuOpen(false);
     }
   };
 
-  const handleSearchSubmit = (term) => {
-    const finalTerm = term.trim() || searchTerm.trim();
-    if (finalTerm) {
-      // Navigates to a search page with the query parameter
-      navigate(`/search?q=${encodeURIComponent(finalTerm)}`);
-      // Optional: Clear the search bar after navigation
-      setSearchTerm(finalTerm); 
-      setIsSearchDropdownOpen(false);
-      setIsMenuOpen(false); // Close mobile menu if open
-    }
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    handleSearch(query);
   };
-  // --- END SEARCH HANDLERS ---
+
+  const handleSelectSuggestion = (product) => {
+    navigate(`/product/${product.id}`, { 
+      state: { product } 
+    });
+    setQuery("");
+    setShowSuggestions(false);
+    setIsMenuOpen(false);
+  };
+  // --- END SEARCH HANDLER ---
+
+  // --- FILE UPLOAD HANDLER - SAVES TO USER DOCUMENT IN FIREBASE ---
+  // --- SIMPLE VERSION: Save file info even without URL ---
+// --- FILE UPLOAD HANDLER - CREATES uploadfiles IN orders SUBCOLLECTION ---
+// --- FILE UPLOAD HANDLER - CREATES uploadfile COLLECTION WITH CUSTOMER DETAILS ---
+const handleFileUpload = async (e) => {
+  const files = Array.from(e.target.files);
+  if (files.length === 0) return;
+
+  if (!user) {
+    alert("Please log in to upload files.");
+    return;
+  }
+
+  // Get user details
+  const userId = user.uid || user.id || user._id || user.customerId;
+  const userName = user.name || "Unknown User";
+  const userEmail = user.email || "unknown@example.com";
+  const userPhone = user.contactNo || user.phone || "Not provided";
+  const customerId = user.customerId || userId;
+
+  if (!userId) {
+    console.log("User object for debugging:", user);
+    alert("User ID not found. Please log in again.");
+    return;
+  }
+
+  console.log("Uploading files for customer:", userName, "ID:", customerId);
+
+  try {
+    // 1. Create uploaded files data
+    const uploadedFilesData = files.map((file, index) => {
+      const timestamp = Date.now();
+      return {
+        fileId: `file_${timestamp}_${index}_${Math.random().toString(36).substr(2, 5)}`,
+        originalName: file.name,
+        fileName: `${timestamp}_${file.name}`,
+        fileType: file.type,
+        fileSize: file.size,
+        uploadedAt: new Date(),
+        status: "pending",
+        lastUpdated: new Date(),
+        localPreview: URL.createObjectURL(file) // For browser preview
+      };
+    });
+
+    // 2. Create a new document in uploadfile collection
+    const uploadfileCollection = collection(db, "uploadfile");
+    const newUploadRef = doc(uploadfileCollection); // Auto-generate ID
+    
+    const uploadData = {
+      // Customer Information
+      customerId: customerId,
+      customerName: userName,
+      customerEmail: userEmail,
+      customerPhone: userPhone,
+      customerUserId: userId,
+      
+      // Upload Information
+      uploadId: newUploadRef.id,
+      uploadDate: new Date(),
+      uploadTimestamp: Date.now(),
+      
+      // Files Data
+      files: uploadedFilesData,
+      totalFiles: files.length,
+      fileTypes: [...new Set(files.map(f => f.type))], // Unique file types
+      totalSize: files.reduce((sum, file) => sum + file.size, 0),
+      
+      // Status
+      status: "pending_review",
+      isProcessed: false,
+      processedBy: null,
+      processedAt: null,
+      
+      // Timestamps
+      createdAt: new Date(),
+      createdBy: userId,
+      updatedAt: new Date()
+    };
+
+    // 3. Save to uploadfile collection
+    await setDoc(newUploadRef, uploadData);
+    
+    console.log("✅ Created new document in uploadfile collection with ID:", newUploadRef.id);
+    alert(`✅ Successfully uploaded ${files.length} file(s)! Upload ID: ${newUploadRef.id}`);
+
+    // 4. Optional: Upload to server
+    try {
+      const formData = new FormData();
+      files.forEach((file) => formData.append("files", file));
+      
+      const token = localStorage.getItem("token");
+      const headers = {};
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      
+      const API_BASE_URL = import.meta.env.VITE_API_URL?.replace("/api", "") || "http://localhost:5000";
+      
+      const response = await fetch(`${API_BASE_URL}/api/files/upload-multiple-public`, {
+        method: "POST",
+        headers: headers,
+        body: formData,
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log("Server upload successful:", result);
+        
+        // Update document with server URLs
+        if (result.files && Array.isArray(result.files)) {
+          const updatedFiles = uploadedFilesData.map((file, index) => {
+            if (result.files[index]) {
+              const serverFile = result.files[index];
+              const fileUrl = serverFile.url || serverFile.secure_url || 
+                            serverFile.location || serverFile.path ||
+                            serverFile.fileUrl || serverFile.downloadUrl;
+              return {
+                ...file,
+                fileUrl: fileUrl,
+                serverFileName: serverFile.originalname || serverFile.name,
+                serverFileId: serverFile.id || serverFile.public_id,
+                status: "uploaded_to_server",
+                serverUploadedAt: new Date(),
+                lastUpdated: new Date()
+              };
+            }
+            return file;
+          });
+          
+          await updateDoc(newUploadRef, {
+            files: updatedFiles,
+            serverUploaded: true,
+            serverUploadedAt: new Date(),
+            status: "uploaded",
+            updatedAt: new Date(),
+            serverResponse: result // Save full server response
+          });
+          
+          console.log("✅ Updated with server URLs");
+        }
+      }
+    } catch (serverError) {
+      console.log("Server upload failed:", serverError);
+      // Still success because file info is saved to Firebase
+    }
+
+    // 5. Also update user's orders/uploadfiles for backward compatibility
+    try {
+      const userUploadRef = doc(db, "users", userId, "orders", "uploadfiles");
+      const userUploadDoc = await getDoc(userUploadRef);
+      
+      if (userUploadDoc.exists()) {
+        const existingData = userUploadDoc.data();
+        const existingFiles = existingData.files || [];
+        const allFiles = [...existingFiles, ...uploadedFilesData];
+        
+        await updateDoc(userUploadRef, {
+          files: allFiles,
+          totalFiles: allFiles.length,
+          lastUpdated: new Date()
+        });
+      } else {
+        await setDoc(userUploadRef, {
+          files: uploadedFilesData,
+          totalFiles: uploadedFilesData.length,
+          createdAt: new Date(),
+          userId: userId,
+          userName: userName,
+          userEmail: userEmail
+        });
+      }
+      console.log("✅ Also updated user's orders/uploadfiles");
+    } catch (userUpdateError) {
+      console.log("User update skipped:", userUpdateError);
+    }
+
+  } catch (error) {
+    console.error("Error uploading files:", error);
+    alert(`❌ Error: ${error.message}`);
+  }
+  
+  // Reset file input
+  e.target.value = "";
+};
+// --- END FILE UPLOAD HANDLER ---
+// --- END FILE UPLOAD HANDLER ---
+  // --- END FILE UPLOAD HANDLER ---
 
   return (
     <div className="bg-white sticky top-0 z-40 shadow-md">
@@ -359,18 +517,7 @@ const Navbar = () => {
                           📦 My Orders
                         </button>
 
-                        <button
-                          onClick={() => {
-                            setIsUserDropdownOpen(false);
-                            localStorage.setItem("shouldOpenUserDropdown", "false");
-                            setTimeout(() => {
-                              navigate("/profile");
-                            }, 100);
-                          }}
-                          className="w-full px-6 py-3 text-left text-blue-700 hover:bg-blue-50 flex items-center text-base font-medium"
-                        >
-                          ⚙️ Profile Settings
-                        </button>
+                        
                       </div>
 
                       {/* Logout */}
@@ -592,59 +739,67 @@ const Navbar = () => {
 
             {/* Search and Actions - Hidden on mobile */}
             <div className="hidden md:flex items-center space-x-3">
-              {/* Search Bar */}
-              <div className="relative" ref={searchDropdownRef}>
-                <div className="flex items-center bg-white border border-gray-400 rounded-lg px-3 py-2">
+              {/* Search Bar Component with Auto Suggestions */}
+              <div className="relative" ref={searchRef}>
+                <form
+                  onSubmit={handleSearchSubmit}
+                  className="w-full max-w-md flex items-center bg-white shadow-lg rounded-full px-4 py-2 gap-3"
+                >
+                  <svg
+                    className="w-4 h-4 text-gray-500"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                    />
+                  </svg>
+
                   <input
                     type="text"
-                    placeholder="Search bar"
-                    className="bg-transparent outline-none text-sm w-48 text-gray-500"
-                    value={searchTerm}
-                    onChange={handleSearchChange}
-                    // Only show dropdown if keywords have been fetched and input has content
-                    onFocus={() => searchTerm.length > 1 && allSearchKeywords.length > 0 && setIsSearchDropdownOpen(suggestions.length > 0)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        handleSearchSubmit(searchTerm);
-                      }
-                    }}
+                    value={query}
+                    placeholder="Search products..."
+                    onChange={(e) => setQuery(e.target.value)}
+                    onFocus={() => query.trim() && setShowSuggestions(true)}
+                    className="flex-1 bg-transparent outline-none text-sm w-48"
                   />
-                  <button 
-                    onClick={() => handleSearchSubmit(searchTerm)}
-                    className="ml-2 p-1 bg-blue-400 text-white rounded hover:bg-blue-500"
-                  >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                      />
-                    </svg>
-                  </button>
-                </div>
 
-                {/* Desktop Search Suggestions Dropdown */}
-                {isSearchDropdownOpen && suggestions.length > 0 && (
-                  <div className="absolute left-0 mt-2 w-full min-w-[300px] bg-white rounded-lg shadow-2xl border border-gray-200 z-50 overflow-hidden">
-                    {suggestions.map((suggestion, index) => (
-                      <button
-                        key={index}
-                        onClick={() => handleSearchSubmit(suggestion)}
-                        className="w-full px-4 py-2 text-left text-gray-700 hover:bg-gray-100 flex items-center text-sm font-medium transition-colors"
+                  <button
+                    type="submit"
+                    className="bg-blue-600 text-white px-4 py-2 rounded-full text-sm hover:bg-blue-700 transition"
+                  >
+                    Search
+                  </button>
+                </form>
+
+                {/* Suggestions Box */}
+                {showSuggestions && suggestions.length > 0 && (
+                  <div className="absolute top-14 left-0 w-full bg-white shadow-lg rounded-lg border z-50 overflow-hidden">
+                    {suggestions.map((item) => (
+                      <div
+                        key={item.id}
+                        className="p-2 hover:bg-gray-100 cursor-pointer flex items-center gap-3"
+                        onClick={() => handleSelectSuggestion(item)}
                       >
-                        🔍 {suggestion}
-                      </button>
+                        <img
+                          src={item.mainImageUrl}
+                          alt={item.name}
+                          className="w-10 h-10 rounded object-cover"
+                        />
+                        <div>
+                          <p className="text-sm font-semibold">{item.name}</p>
+                          <p className="text-xs text-gray-500">{item.productTag}</p>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 )}
               </div>
-              {/* END Search Bar */}
+              {/* END Search Bar Component */}
 
               {/* Upload and Download functionality */}
               <div className="flex items-center space-x-2">
@@ -667,53 +822,10 @@ const Navbar = () => {
                     type="file"
                     multiple
                     className="hidden"
-                    onChange={async (e) => {
-                      const files = Array.from(e.target.files);
-                      if (files.length > 0) {
-                        try {
-                          const formData = new FormData();
-                          files.forEach((file) => formData.append("files", file));
-
-                          const token = localStorage.getItem("token");
-                          const headers = {};
-                          if (token) {
-                            headers.Authorization = `Bearer ${token}`;
-                          }
-
-                          const API_BASE_URL =
-                            import.meta.env.VITE_API_URL?.replace("/api", "") ||
-                            "http://localhost:5000";
-                          const response = await fetch(
-                            `${API_BASE_URL}/api/files/upload-multiple-public`,
-                            {
-                              method: "POST",
-                              headers: headers,
-                              body: formData,
-                            }
-                          );
-
-                          if (response.ok) {
-                            const result = await response.json();
-                            alert(
-                              `Successfully uploaded ${result.files.length} files to Cloudinary!`
-                            );
-                          } else {
-                            const errorData = await response.json();
-                            alert(
-                              `Failed to upload files: ${
-                                errorData.message || "Unknown error"
-                              }`
-                            );
-                          }
-                        } catch (error) {
-                          console.error("Error uploading files:", error);
-                          alert("Error uploading files");
-                        }
-                      }
-                      e.target.value = "";
-                    }}
+                    onChange={handleFileUpload}
                   />
                 </label>
+                
                 <button
                   onClick={() => navigate("/file-downloads")}
                   className="flex items-center text-gray-700 hover:text-purple-600 text-sm cursor-pointer transition duration-200"
@@ -735,17 +847,15 @@ const Navbar = () => {
                 </button>
               </div>
               
-              {/* === START: ADDED BECOME A SELLER BUTTON (DESKTOP) === */}
+              {/* Become a Seller Button */}
               <a
-  href="https://lmart-seller.vercel.app/seller/login"
-  target="_blank"
-  rel="noopener noreferrer"
-  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium text-sm transition duration-200 whitespace-nowrap inline-block text-center"
->
-  Become a Seller
-</a>
-
-              {/* === END: ADDED BECOME A SELLER BUTTON (DESKTOP) === */}
+                href="https://lmart-seller.vercel.app/seller/login"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium text-sm transition duration-200 whitespace-nowrap inline-block text-center"
+              >
+                Become a Seller
+              </a>
 
               <Link
                 to="/contact"
@@ -826,18 +936,11 @@ const Navbar = () => {
                   🏠 Home
                 </Link>
                 <Link
-                  to="/printing"
-                  onClick={() => setIsMenuOpen(false)}
-                  className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
-                >
-                  🖨️ Printing
-                </Link>
-                <Link
                   to="/e-market"
                   onClick={() => setIsMenuOpen(false)}
                   className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
                 >
-                  🛒 E-Market
+                  🛒 E-Store
                 </Link>
                 <Link
                   to="/local-market"
@@ -845,6 +948,13 @@ const Navbar = () => {
                   className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
                 >
                   🏪 Local Market
+                </Link>
+                <Link
+                  to="/printing"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
+                >
+                  🖨️ Printing
                 </Link>
                 <Link
                   to="/news-today"
@@ -865,53 +975,61 @@ const Navbar = () => {
             
             {/* Mobile Actions Section */}
             <div className="py-6 px-5 space-y-6">
-              {/* Mobile Search */}
-              <div className="relative">
-                <div className="flex items-center bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+              {/* Mobile Search with Auto Suggestions */}
+              <div className="relative" ref={searchRef}>
+                <form
+                  onSubmit={handleSearchSubmit}
+                  className="flex items-center bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 gap-2"
+                >
+                  <svg
+                    className="w-4 h-4 text-gray-500"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M21 21l-6-6m2-5a7 7 0 1114 0 7 7 0 01-7 7z"
+                    />
+                  </svg>
+
                   <input
                     type="text"
-                    placeholder="Search..."
-                    className="bg-transparent outline-none text-sm flex-1 text-gray-500"
-                    value={searchTerm}
-                    onChange={handleSearchChange}
-                    onFocus={() => searchTerm.length > 1 && allSearchKeywords.length > 0 && setIsSearchDropdownOpen(suggestions.length > 0)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        handleSearchSubmit(searchTerm);
-                      }
-                    }}
+                    value={query}
+                    placeholder="Search products..."
+                    onChange={(e) => setQuery(e.target.value)}
+                    className="flex-1 bg-transparent outline-none text-sm"
                   />
-                  <button 
-                    onClick={() => handleSearchSubmit(searchTerm)}
-                    className="ml-2 p-1 bg-blue-400 text-white rounded hover:bg-blue-500"
+
+                  <button
+                    type="submit"
+                    className="bg-blue-600 text-white px-3 py-1 rounded-md text-sm hover:bg-blue-700 transition"
                   >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                      />
-                    </svg>
+                    Search
                   </button>
-                </div>
-                
-                {/* Mobile Search Suggestions Dropdown (appears inside the menu) */}
-                {isSearchDropdownOpen && suggestions.length > 0 && (
-                  <div className="absolute left-0 mt-2 w-full bg-white rounded-lg shadow-lg border border-gray-200 z-50 overflow-hidden">
-                    {suggestions.map((suggestion, index) => (
-                      <button
-                        key={index}
-                        onClick={() => handleSearchSubmit(suggestion)}
-                        className="w-full px-4 py-2 text-left text-gray-700 hover:bg-gray-100 flex items-center text-sm font-medium transition-colors"
+                </form>
+
+                {/* Mobile Suggestions Box */}
+                {showSuggestions && suggestions.length > 0 && (
+                  <div className="absolute top-12 left-0 w-full bg-white shadow-lg rounded-lg border z-50 overflow-hidden">
+                    {suggestions.map((item) => (
+                      <div
+                        key={item.id}
+                        className="p-2 hover:bg-gray-100 cursor-pointer flex items-center gap-3"
+                        onClick={() => handleSelectSuggestion(item)}
                       >
-                        🔍 {suggestion}
-                      </button>
+                        <img
+                          src={item.mainImageUrl}
+                          alt={item.name}
+                          className="w-8 h-8 rounded object-cover"
+                        />
+                        <div>
+                          <p className="text-xs font-semibold">{item.name}</p>
+                          <p className="text-xs text-gray-500">{item.productTag}</p>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -920,8 +1038,7 @@ const Navbar = () => {
 
               {/* Mobile Action Buttons */}
               <div className="space-y-3">
-                
-                {/* === START: ADDED BECOME A SELLER BUTTON (MOBILE) === */}
+                {/* Become a Seller Button */}
                 <button 
                   onClick={() => {
                     navigate("/become-a-seller");
@@ -931,7 +1048,6 @@ const Navbar = () => {
                 >
                   💰 Become a Seller
                 </button>
-                {/* === END: ADDED BECOME A SELLER BUTTON (MOBILE) === */}
                 
                 <button 
                   onClick={() => {
@@ -944,6 +1060,7 @@ const Navbar = () => {
                 </button>
                 
                 <div className="flex space-x-4 pt-2">
+                  {/* Mobile Upload Button */}
                   <label className="flex-1 flex items-center justify-center text-gray-700 hover:text-purple-600 text-sm cursor-pointer border border-gray-300 rounded-lg px-3 py-2">
                     <svg
                       className="w-4 h-4 mr-1 text-gray-600"
@@ -963,53 +1080,10 @@ const Navbar = () => {
                       type="file"
                       multiple
                       className="hidden"
-                      onChange={async (e) => {
-                        const files = Array.from(e.target.files);
-                        if (files.length > 0) {
-                          try {
-                            const formData = new FormData();
-                            files.forEach((file) => formData.append("files", file));
-
-                            const token = localStorage.getItem("token");
-                            const headers = {};
-                            if (token) {
-                              headers.Authorization = `Bearer ${token}`;
-                            }
-
-                            const API_BASE_URL =
-                              import.meta.env.VITE_API_BASE_URL ||
-                              "http://localhost:5000";
-                            const response = await fetch(
-                              `${API_BASE_URL}/api/files/upload-multiple-public`,
-                              {
-                                method: "POST",
-                                headers: headers,
-                                body: formData,
-                              }
-                            );
-
-                            if (response.ok) {
-                              const result = await response.json();
-                              alert(
-                                `Successfully uploaded ${result.files.length} files to Cloudinary!`
-                              );
-                            } else {
-                              const errorData = await response.json();
-                              alert(
-                                `Failed to upload files: ${
-                                  errorData.message || "Unknown error"
-                                }`
-                              );
-                            }
-                          } catch (error) {
-                            console.error("Error uploading files:", error);
-                            alert("Error uploading files");
-                          }
-                        }
-                        e.target.value = "";
-                      }}
+                      onChange={handleFileUpload}
                     />
                   </label>
+                  
                   <button
                     onClick={() => {
                       navigate("/file-downloads");
@@ -1028,7 +1102,7 @@ const Navbar = () => {
                         strokeLinejoin="round"
                         strokeWidth={2}
                         d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                    />
+                      />
                     </svg>
                     Download
                   </button>
@@ -1236,10 +1310,8 @@ const Navbar = () => {
                     
                     <button
                       onClick={() => {
-                        if (window.confirm("Are you sure you want to clear your cart?")) {
-                          clearCart();
-                          setIsCartOpen(false);
-                        }
+                        clearCart();
+                        setIsCartOpen(false);
                       }}
                       className="w-full bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg font-medium transition-colors text-sm"
                     >

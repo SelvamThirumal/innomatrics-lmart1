@@ -1,4 +1,3 @@
-// App.jsx
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { CartProvider } from './context/CartContext';
@@ -18,6 +17,7 @@ import AdminLogin from './Pages/AdminLogin';
 import AdminDashboard from './Pages/AdminDashboard';
 import UserLogin from './Pages/UserLogin';
 import UserRegister from './Pages/UserRegister';
+import ForgotPassword from './Pages/ForgotPassword'; // <-- ADDED: Import ForgotPassword
 import Cart from './Pages/Cart';
 import Checkout from './Pages/Checkout';
 import OrderSuccess from './Pages/OrderSuccess';
@@ -29,6 +29,7 @@ import ProductDetail from './Pages/ProductDetail';
 import Contact from './Pages/Contact';
 import NotFound from './Pages/NotFound';
 import Invoice from './Pages/Invoice';
+import SearchResults from './components/SearchResults';
 
 // Policy & Utility Components
 import ReturnPolicy from './components/ReturnPolicy';
@@ -37,11 +38,9 @@ import TermsConditions from './components/TermsConditions';
 import ChatWithUs from './components/ChatWithUs';
 import FAQs from './components/FAQs';
 
-// 👇 NEW PAGE IMPORTS 👇
 import MyOrders from './Pages/MyOrders'; 
 import ReturnOrderForm from './Pages/ReturnOrderForm'; 
-import Oldee from './Pages/Oldee'; // <-- ADDED: Import the new Oldee page
-// 👆 NEW PAGE IMPORTS 👆
+import Oldee from './Pages/Oldee';
 
 const App = () => {
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -64,11 +63,11 @@ const App = () => {
       <CartProvider>
         <Router>
           <Routes>
-            {/* ADMIN ROUTES - No Navbar/Footer */}
+            {/* ADMIN ROUTES */}
             <Route path="/admin/login" element={<AdminLogin />} />
             <Route path="/admin/dashboard" element={<AdminDashboard />} />
 
-            {/* USER ROUTES (Shell with Navbar/Footer) */}
+            {/* USER ROUTES */}
             <Route
               path="/*"
               element={
@@ -78,29 +77,26 @@ const App = () => {
                   <LoginModal isOpen={showLoginModal} onClose={handleCloseModal} />
 
                   <main className="flex-1">
-                    {/* Nested Routes for User Pages */}
                     <Routes>
                       <Route path="/" element={<Home />} />
                       <Route path="/printing" element={<Printing />} />
                       <Route path="/e-market" element={<EMarket />} />
                       <Route path="/local-market" element={<LocalMarket />} />
                       <Route path="/news-today" element={<NewsToday />} />
-                      
-                      {/* 👇 NEW OLDEE ROUTE 👇 */}
                       <Route path="/oldee" element={<Oldee />} /> 
-                      {/* 👆 NEW OLDEE ROUTE 👆 */}
 
                       <Route path="/login" element={<UserLogin />} />
                       <Route path="/register" element={<UserRegister />} />
+                      {/* 👇 NEW FORGOT PASSWORD ROUTE 👇 */}
+                      <Route path="/forgot-password" element={<ForgotPassword />} />
 
                       <Route path="/cart" element={<Cart />} />
                       <Route path="/checkout" element={<Checkout />} />
                       <Route path="/order-success" element={<OrderSuccess />} />
 
-                      {/* 👇 NEW ORDER ROUTES 👇 */}
                       <Route path="/my-orders" element={<MyOrders />} />
                       <Route path="/return/:orderId" element={<ReturnOrderForm />} />
-                      {/* 👆 NEW ORDER ROUTES 👆 */}
+                      <Route path="/search-results" element={<SearchResults />} />
 
                       <Route path="/terms-of-service" element={<TermsOfService />} />
                       <Route path="/privacy" element={<Privacy />} />
@@ -111,14 +107,12 @@ const App = () => {
                       <Route path="/product/:productId" element={<ProductDetail />} />
                       <Route path="/invoice" element={<Invoice />} />
 
-                      {/* Policy Routes */}
                       <Route path="/return-policy" element={<ReturnPolicy />} />
                       <Route path="/shipping-policy" element={<ShippingPolicy/>} />
                       <Route path="/terms-conditions" element={<TermsConditions/>} />
                       <Route path="/chat-with-us" element={<ChatWithUs/>} />
                       <Route path="/faqs" element={<FAQs/>} />
 
-                      {/* 404 - Catches any undefined paths within the shell */}
                       <Route path="*" element={<NotFound />} />
                     </Routes>
                   </main>

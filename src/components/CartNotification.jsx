@@ -4,15 +4,20 @@ import { useCart } from '../context/CartContext'
 const CartNotification = () => {
   const { notification, hideNotification } = useCart()
 
+  // Add null check for notification
+  if (!notification) {
+    return null;
+  }
+
   useEffect(() => {
-    if (notification.show) {
+    if (notification && notification.show) {
       const timer = setTimeout(() => {
         hideNotification()
       }, 3000) // Hide after 3 seconds
 
       return () => clearTimeout(timer)
     }
-  }, [notification.show, hideNotification])
+  }, [notification, hideNotification])
 
   if (!notification.show) {
     return null

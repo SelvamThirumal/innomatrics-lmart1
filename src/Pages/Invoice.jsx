@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useReactToPrint } from 'react-to-print';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 // Import Firebase utilities
 import { doc, getDoc, updateDoc } from 'firebase/firestore'; 
 //  ADJUST THIS PATH IF NECESSARY
 import { db } from '../../firebase'; 
+import CancelOrderModal from './CancelOrderModal';
+import ReturnOrderModal from './ReturnOrderForm';
 
 const Invoice = () => {
   // 1. Get orderId from the URL search parameters
@@ -20,8 +24,10 @@ const Invoice = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isCancelling, setIsCancelling] = useState(false);
-  // 👇 NEW: State for return action
   const [isReturning, setIsReturning] = useState(false);
+  const [generatingPDF, setGeneratingPDF] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showReturnModal, setShowReturnModal] = useState(false);
   
   const invoiceRef = useRef();
 
@@ -42,8 +48,10 @@ const Invoice = () => {
       return 'N/A';
     }
   };
-
-  const handlePrint = useReactToPrint({
+  
+  // --- PRINT LOGIC ---
+  
+  const triggerPrint = useReactToPrint({
     content: () => {
         if (invoiceRef.current) {
             return invoiceRef.current;
@@ -63,6 +71,73 @@ const Invoice = () => {
     `,
     onAfterPrint: () => console.log('Printed successfully!'),
   });
+  
+  const handleImmediatePrint = () => {
+    setTimeout(() => {
+        if (invoiceRef.current) {
+            triggerPrint();
+        } else {
+            console.error("Cannot print: Invoice content reference is missing after timeout.");
+        }
+    }, 100); 
+  };
+
+  // --- PDF DOWNLOAD FUNCTION using html2canvas + jsPDF ---
+  const handleDownloadPDF = async () => {
+    if (!invoiceRef.current) {
+      alert("Invoice content not available. Please try again.");
+      return;
+    }
+
+    setGeneratingPDF(true);
+    
+    try {
+      const input = invoiceRef.current;
+      
+      // Create canvas from invoice content
+      const canvas = await html2canvas(input, {
+        scale: 2, // Better quality
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        allowTaint: true
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      
+      const imgWidth = 190; // A4 width in mm (210mm - margins)
+      const pageHeight = 297; // A4 height in mm
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      
+      let heightLeft = imgHeight;
+      let position = 10; // Start position
+      
+      // Add first page
+      pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+      
+      // Add additional pages if content is long
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+      
+      // Download the PDF with order ID in filename
+      const fileName = `Invoice-${orderData?.orderId || orderData?.id || 'Order'}.pdf`;
+      pdf.save(fileName);
+      
+      console.log('PDF generated successfully:', fileName);
+      
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Failed to generate PDF. Please try the print option instead.');
+    } finally {
+      setGeneratingPDF(false);
+    }
+  };
 
   // --- Data Fetching Effect ---
 
@@ -98,65 +173,49 @@ const Invoice = () => {
 
   // --- Order Cancellation Handler ---
 
-  const handleCancelOrder = async () => {
+  const handleCancelOrder = () => {
     // Prevent cancellation if status is final or action is in progress
-    if (!orderData || ['cancelled', 'returned'].includes(orderData.status?.toLowerCase()) || isCancelling || isReturning) return;
+    if (!orderData || ['cancelled', 'returned'].includes(orderData.status?.toLowerCase())) return;
     
-    setIsCancelling(true);
-    try {
-      const orderDocRef = doc(db, "users", currentUserId, "orders", orderId);
-      await updateDoc(orderDocRef, {
-        status: 'cancelled',
-        cancelledAt: new Date(), 
-      });
-
-      // Update local state
-      setOrderData(prev => ({ 
-          ...prev, 
-          status: 'cancelled',
-          cancelledAt: new Date()
-      }));
-      // ⚠️ This DB update should trigger the automated email via Cloud Function/Extension
-      alert(`Order ${orderData.orderId || orderData.id} has been successfully cancelled.`);
-    } catch (err) {
-      console.error("Error cancelling order:", err);
-      alert("Failed to cancel the order. Please try again.");
-    } finally {
-      setIsCancelling(false);
-    }
+    // Show the modal instead of directly cancelling
+    setShowCancelModal(true);
   };
   
-  // --- 👇 NEW: Order Return Handler ---
+  // --- Order Return Handler ---
   
-  const handleReturnOrder = async () => {
+  const handleReturnOrder = () => {
     // Prevent return if status is final or action is in progress
-    if (!orderData || ['cancelled', 'returned'].includes(orderData.status?.toLowerCase()) || isCancelling || isReturning) return;
+    if (!orderData || ['cancelled', 'returned'].includes(orderData.status?.toLowerCase())) return;
     
-    setIsReturning(true);
-    try {
-      const orderDocRef = doc(db, "users", currentUserId, "orders", orderId);
-      await updateDoc(orderDocRef, {
-        status: 'returned',
-        returnRequestedAt: new Date(), 
-      });
-
-      // Update local state
-      setOrderData(prev => ({ 
-          ...prev, 
-          status: 'returned',
-          returnRequestedAt: new Date()
-      }));
-      // ⚠️ This DB update should trigger the automated email via Cloud Function/Extension
-      alert(`Return request for Order ${orderData.orderId || orderData.id} has been successfully submitted.`);
-    } catch (err) {
-      console.error("Error submitting return request:", err);
-      alert("Failed to submit the return request. Please try again.");
-    } finally {
-      setIsReturning(false);
-    }
+    // Show the return modal
+    setShowReturnModal(true);
   };
-  // --- 👆 END NEW: Order Return Handler ---
 
+  // --- Success Handler for Cancel Modal ---
+  const handleCancelSuccess = () => {
+    // Update local state to reflect cancellation
+    setOrderData(prev => ({ 
+      ...prev, 
+      status: 'cancelled',
+      cancelledAt: new Date()
+    }));
+    
+    // Close the modal
+    setShowCancelModal(false);
+  };
+
+  // --- Success Handler for Return Modal ---
+  const handleReturnSuccess = () => {
+    // Update local state to reflect return
+    setOrderData(prev => ({ 
+      ...prev, 
+      status: 'returned',
+      returnRequestedAt: new Date()
+    }));
+    
+    // Close the modal
+    setShowReturnModal(false);
+  };
 
   // --- Render Logic (Loading/Error States) ---
 
@@ -191,19 +250,39 @@ const Invoice = () => {
   
   return (
     <div className="container mx-auto p-4 py-12">
+        {/* Cancel Order Modal */}
+        {showCancelModal && (
+          <CancelOrderModal
+            orderData={orderData}
+            onClose={() => setShowCancelModal(false)}
+            onCancelSuccess={handleCancelSuccess}
+          />
+        )}
+
+        {/* Return Order Modal */}
+        {showReturnModal && (
+          <ReturnOrderModal
+            orderData={orderData}
+            onClose={() => setShowReturnModal(false)}
+            onReturnSuccess={handleReturnSuccess}
+          />
+        )}
         
-        {/* Header with Print/Close Buttons */}
+        {/* Header with Print/Download/Close Buttons */}
         <div className="flex justify-between items-center pb-6 border-b mb-6 no-print">
             <h1 className="text-3xl font-bold">Invoice Details</h1>
-            <div className="flex gap-4">
+            <div className="flex flex-wrap gap-2">
                 <button
-                    onClick={handlePrint}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    onClick={handleDownloadPDF}
+                    disabled={generatingPDF}
+                    className={`px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors ${
+                      generatingPDF ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
                 >
-                    Print Invoice
+                    {generatingPDF ? 'Generating PDF...' : 'Download PDF'}
                 </button>
                 <button
-                    onClick={() => navigate(-1)} // Go back to the previous page (MyOrders)
+                    onClick={() => navigate(-1)}
                     className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
                 >
                     Back to Orders
@@ -220,6 +299,16 @@ const Invoice = () => {
             <p className="text-gray-600">
               <strong>Date:</strong> {formatDate(orderData.createdAt || new Date())}
             </p>
+            {orderData.cancelledAt && (
+              <p className="text-red-600 mt-1">
+                <strong>Cancelled Date:</strong> {formatDate(orderData.cancelledAt)}
+              </p>
+            )}
+            {orderData.returnRequestedAt && (
+              <p className="text-orange-600 mt-1">
+                <strong>Return Requested Date:</strong> {formatDate(orderData.returnRequestedAt)}
+              </p>
+            )}
           </div>
 
           {/* Billing and Shipping Info */}
@@ -229,13 +318,17 @@ const Invoice = () => {
               <p className="font-medium text-gray-900">{orderData.customerInfo?.name || "N/A"}</p>
               <p className="text-gray-600">{orderData.customerInfo?.address || "N/A"}</p>
               <p className="text-gray-600">{orderData.customerInfo?.pincode || "N/A"}</p>
+              <p className="text-gray-600">{orderData.customerInfo?.city || "N/A"}</p>
               <p className="text-blue-600 mt-1">{orderData.customerInfo?.email || "N/A"}</p>
+              <p className="text-gray-600">{orderData.customerInfo?.phone || "N/A"}</p>
             </div>
             <div className="bg-gray-50 p-4 rounded-lg md:text-right">
               <h3 className="font-semibold mb-2 text-gray-700">From:</h3>
               <p className="font-medium text-gray-900">L-Mart</p>
               <p className="text-gray-600">Kamavarn Biraul, Darbhanga</p>
-              <p className="text-blue-600 mt-1">support@lmart.example</p>
+              <p className="text-gray-600">Bihar, India - 847203</p>
+              <p className="text-blue-600 mt-1">support@lmart.example.com</p>
+              <p className="text-gray-600">Phone: +91 9876543210</p>
             </div>
           </div>
 
@@ -254,7 +347,20 @@ const Invoice = () => {
                 {orderData.items && orderData.items.length > 0 ? (
                   orderData.items.map((item, index) => (
                     <tr key={index} className="border-b border-gray-200 hover:bg-gray-50">
-                      <td className="py-3 px-4">{item.name || "Product"}</td>
+                      <td className="py-3 px-4">
+                        <div>
+                          <p className="font-medium">{item.name || "Product"}</p>
+                          {(item.selectedColor || item.selectedSize || item.selectedRam) && (
+                            <p className="text-xs text-gray-500">
+                              Customization: {[
+                                item.selectedColor && `Color: ${item.selectedColor}`,
+                                item.selectedSize && `Size: ${item.selectedSize}`,
+                                item.selectedRam && `RAM: ${item.selectedRam}`
+                              ].filter(Boolean).join(", ")}
+                            </p>
+                          )}
+                        </div>
+                      </td>
                       <td className="text-center py-3 px-4">{item.quantity || 1}</td>
                       <td className="text-right py-3 px-4">₹{item.price?.toFixed(2) || "0.00"}</td>
                       <td className="text-right py-3 px-4 font-medium">
@@ -293,18 +399,28 @@ const Invoice = () => {
                 <strong className="text-gray-700">Payment ID:</strong> {orderData.paymentId}
               </p>
             )}
+            {orderData.razorpayOrderId && (
+              <p className="mb-2">
+                <strong className="text-gray-700">Razorpay Order ID:</strong> {orderData.razorpayOrderId}
+              </p>
+            )}
             <p className="mb-2">
               <strong className="text-gray-700">Order Status:</strong> 
-              <span className={`ml-2 px-2 py-1 rounded-full text-xs font-semibold ${
+              <span className={`ml-2 px-3 py-1 rounded-full text-xs font-semibold ${
                 normalizedStatus === 'cancelled' ? 'bg-red-100 text-red-800' : 
                 normalizedStatus === 'returned' ? 'bg-orange-100 text-orange-800' : 'bg-green-100 text-green-800'
               }`}>
                 {orderData.status || "Confirmed"}
               </span>
             </p>
-            <p className="mt-4 text-gray-600 italic">
-              Thank you for your purchase! For any queries, contact support@lmart.example
-            </p>
+            <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+              <p className="text-gray-600 italic">
+                Thank you for your purchase! For any queries, contact support@lmart.example.com
+              </p>
+              <p className="text-xs text-gray-500 mt-2">
+                Invoice generated on: {new Date().toLocaleDateString('en-GB')}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -315,42 +431,36 @@ const Invoice = () => {
             {/* Cancel Button */}
             <button
               onClick={handleCancelOrder}
-              className={`px-6 py-3 text-white rounded-lg transition-colors ${
-                isFinalStatus || isCancelling || isReturning
+              className={`px-6 py-3 text-white rounded-lg transition-colors font-medium ${
+                isFinalStatus
                   ? 'bg-gray-400 cursor-not-allowed' 
-                  : 'bg-red-600 hover:bg-red-700'
+                  : 'bg-red-600 hover:bg-red-700 shadow-md hover:shadow-lg'
               }`}
-              disabled={isFinalStatus || isCancelling || isReturning}
+              disabled={isFinalStatus}
             >
-              {isCancelling ? 'Cancelling...' : (normalizedStatus === 'cancelled' ? 'Order Cancelled' : 'Cancel Order')}
+              {normalizedStatus === 'cancelled' ? 'Order Cancelled' : 'Cancel Order'}
             </button>
             
             {/* Return Button */}
             <button
               onClick={handleReturnOrder}
-              className={`px-6 py-3 text-white rounded-lg transition-colors ${
-                isFinalStatus || isCancelling || isReturning
+              className={`px-6 py-3 text-white rounded-lg transition-colors font-medium ${
+                isFinalStatus
                   ? 'bg-gray-400 cursor-not-allowed' 
-                  : 'bg-orange-600 hover:bg-orange-700'
+                  : 'bg-orange-600 hover:bg-orange-700 shadow-md hover:shadow-lg'
               }`}
-              disabled={isFinalStatus || isCancelling || isReturning}
+              disabled={isFinalStatus}
             >
-              {isReturning ? 'Requesting Return...' : (normalizedStatus === 'returned' ? 'Return Requested' : 'Return Order')}
+              {normalizedStatus === 'returned' ? 'Return Requested' : 'Return Order'}
             </button>
 
             <button
-              onClick={() => navigate(0)} // Triggers a page reload
-              className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+              onClick={() => navigate(0)}
+              className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors font-medium shadow-md hover:shadow-lg"
             >
               Refresh Details
             </button>
           </div>
-          <button
-            onClick={handlePrint}
-            className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-          >
-            Download Invoice (PDF)
-          </button>
         </div>
       </div>
   );

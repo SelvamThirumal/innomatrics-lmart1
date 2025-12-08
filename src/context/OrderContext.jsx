@@ -45,26 +45,6 @@ const initialState = {
 export const OrderProvider = ({ children }) => {
   const [state, dispatch] = useReducer(orderReducer, initialState);
 
-  // localStorage functionality disabled - orders will only be saved to MongoDB
-  // useEffect(() => {
-  //   const savedOrders = localStorage.getItem('orders');
-  //   if (savedOrders) {
-  //     try {
-  //       const orders = JSON.parse(savedOrders);
-  //       dispatch({ type: ORDER_ACTIONS.LOAD_ORDERS, payload: orders });
-  //     } catch (error) {
-  //       console.error('Error loading orders from localStorage:', error);
-  //     }
-  //   }
-  // }, []);
-
-  // localStorage saving disabled - orders will only be saved to MongoDB
-  // useEffect(() => {
-  //   console.log('OrderContext: Saving orders to localStorage:', state.orders);
-  //   localStorage.setItem('orders', JSON.stringify(state.orders));
-  //   console.log('OrderContext: Orders saved to localStorage successfully');
-  // }, [state.orders]);
-
   // Order Actions
   const addOrder = (orderData) => {
     console.log('OrderContext: Adding order with data:', orderData);
@@ -78,8 +58,8 @@ export const OrderProvider = ({ children }) => {
       estimatedDelivery: getEstimatedDelivery(),
       items: orderData.items,
       total: orderData.amount,
-      amount: orderData.amount, // Add amount property for AdminDashboard compatibility
-      customerName: orderData.customerName || 'Guest Customer', // Add customerName
+      amount: orderData.amount, 
+      customerName: orderData.customerName || 'Guest Customer',
 
     };
     

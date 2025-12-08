@@ -1,12 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-// UPDATED: Added 'addDoc' to the imports for creating new request documents
 import { collection, query, getDocs, orderBy, doc, updateDoc, Timestamp, addDoc } from 'firebase/firestore'; 
 import { db } from '../../firebase';
 
-// =======================
-// RETURN ORDER FORM (MODIFIED to create a separate document)
-// =======================
+// Return Order Form Component
 const ReturnOrderForm = ({ order, userId, onClose, onSuccess }) => {
   const [reason, setReason] = useState('');
   const [description, setDescription] = useState('');
@@ -33,36 +30,46 @@ const ReturnOrderForm = ({ order, userId, onClose, onSuccess }) => {
     setError('');
 
     try {
-      // 1. **CREATE RETURN REQUEST DOCUMENT IN SUBCOLLECTION**
-      // Path: users/{userId}/returnRequests/{newDocId}
       const returnRequestCollectionRef = collection(db, "users", userId, "returnRequests"); 
       
-      const newReturnRequestRef = await addDoc(returnRequestCollectionRef, {
-        orderId: order.orderId, // Link to the original order ID (if available)
-        firestoreOrderId: order.id, // Firestore document ID of the original order
+      const returnRequestData = {
+        orderId: order.orderId,
+        firestoreOrderId: order.id,
         reason,
         description,
         requestedAt: Timestamp.now(),
-        status: 'pending', // Status for the request document itself
+        status: 'pending',
+        // DYNAMIC PASSING: Keeping sellerId in return record
         items: order.items.map(item => ({ 
-            id: item.id, 
-            name: item.name, 
-            quantity: item.quantity,
-            price: item.price
+          id: item.id, 
+          name: item.name, 
+          quantity: item.quantity,
+          price: item.price,
+          image: item.image || item.imageUrl,
+          sellerId: item.sellerId || "Unknown" // Added sellerId
         })),
-        returnRequestId: newReturnRequestRef.id // Store the new ID
+        totalAmount: order.amount,
+        customerInfo: order.customerInfo || {}
+      };
+
+      const newReturnRequestRef = await addDoc(returnRequestCollectionRef, returnRequestData);
+      
+      // Update the new request with its own ID
+      await updateDoc(newReturnRequestRef, {
+        returnRequestId: newReturnRequestRef.id
       });
 
-      // 2. **UPDATE MAIN ORDER STATUS**
-      // This is crucial for updating the status shown on the My Orders page
+      // Update the main order status
       const orderRef = doc(db, "users", userId, "orders", order.id);
       
       await updateDoc(orderRef, {
-        status: 'return_requested', // Update the main order status
-        returnRequestId: newReturnRequestRef.id, // Reference the new request document
+        status: 'return_requested',
+        returnRequestId: newReturnRequestRef.id,
         returnRequest: {
-            reason,
-            status: 'pending' 
+          reason,
+          description,
+          status: 'pending',
+          requestedAt: Timestamp.now()
         },
         updatedAt: Timestamp.now()
       });
@@ -176,9 +183,7 @@ const ReturnOrderForm = ({ order, userId, onClose, onSuccess }) => {
   );
 };
 
-// =======================
-// CANCEL ORDER FORM (MODIFIED to create a separate document)
-// =======================
+// Cancel Order Form Component
 const CancelOrderForm = ({ order, userId, onClose, onSuccess }) => {
   const [reason, setReason] = useState('');
   const [otherReason, setOtherReason] = useState('');
@@ -207,25 +212,30 @@ const CancelOrderForm = ({ order, userId, onClose, onSuccess }) => {
     const finalReason = reason === 'Other' ? otherReason : reason;
 
     try {
-      // 1. **CREATE CANCELLATION REQUEST DOCUMENT IN SUBCOLLECTION**
-      // Path: users/{userId}/cancellationRequests/{newDocId}
       const cancellationCollectionRef = collection(db, "users", userId, "cancellationRequests"); 
       
-      const newCancellationRequestRef = await addDoc(cancellationCollectionRef, {
-        orderId: order.orderId, // Link to the original order ID (if available)
-        firestoreOrderId: order.id, // Firestore document ID of the order
+      const cancellationData = {
+        orderId: order.orderId,
+        firestoreOrderId: order.id,
         reason: finalReason,
         requestedAt: Timestamp.now(),
-        status: 'completed', // Assuming immediate cancellation in this flow
-        amount: order.amount
-      });
+        status: 'completed',
+        amount: order.amount,
+        items: order.items.map(item => ({ 
+          ...item,
+          sellerId: item.sellerId || "Unknown" // Added sellerId
+        })),
+        paymentMethod: order.paymentMethod
+      };
+
+      const newCancellationRequestRef = await addDoc(cancellationCollectionRef, cancellationData);
       
-      // 2. **UPDATE MAIN ORDER STATUS**
+      // Update the main order status
       const orderRef = doc(db, "users", userId, "orders", order.id);
       
       await updateDoc(orderRef, {
         status: 'cancelled',
-        cancellationId: newCancellationRequestRef.id, // Reference the new request document
+        cancellationId: newCancellationRequestRef.id,
         cancellation: {
           reason: finalReason,
           cancelledAt: Timestamp.now()
@@ -345,15 +355,14 @@ const CancelOrderForm = ({ order, userId, onClose, onSuccess }) => {
   );
 };
 
-// =======================
-// MAIN MY ORDERS PAGE
-// =======================
+// Main MyOrders Component
 const MyOrders = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showReturnForm, setShowReturnForm] = useState(false);
   const [showCancelForm, setShowCancelForm] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [successMessage, setSuccessMessage] = useState('');
   const navigate = useNavigate();
   
   const currentUserId = localStorage.getItem('token');
@@ -365,7 +374,6 @@ const MyOrders = () => {
     }
     
     try {
-      // Fetch orders from the 'orders' subcollection under the user
       const ordersSubCollectionRef = collection(db, "users", currentUserId, "orders");
       const q = query(
         ordersSubCollectionRef,
@@ -375,10 +383,24 @@ const MyOrders = () => {
       const querySnapshot = await getDocs(q);
       const fetchedOrders = querySnapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data(),
+        createdAt: doc.data().createdAt || Timestamp.now()
       }));
       
       setOrders(fetchedOrders);
+      
+      // Check for success message from checkout
+      const orderSuccessData = sessionStorage.getItem("orderSuccessData");
+      if (orderSuccessData) {
+        const orderData = JSON.parse(orderSuccessData);
+        setSuccessMessage(`🎉 Order #${orderData.orderId} placed successfully!`);
+        sessionStorage.removeItem("orderSuccessData");
+        
+        // Auto-remove success message after 5 seconds
+        setTimeout(() => {
+          setSuccessMessage('');
+        }, 5000);
+      }
     } catch (error) {
       console.error("Error fetching orders:", error);
     } finally {
@@ -394,12 +416,14 @@ const MyOrders = () => {
     const status = order.status?.toLowerCase();
     const nonReturnableStatuses = ['cancelled', 'returned', 'return_requested', 'return_rejected'];
     
-    // Check if order was delivered within last 7 days (or your custom return window)
+    // Check if order was delivered within last 7 days
     const orderDate = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt);
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     
-    return !nonReturnableStatuses.includes(status) && status === 'delivered' && orderDate > sevenDaysAgo;
+    return !nonReturnableStatuses.includes(status) && 
+           status === 'delivered' && 
+           orderDate > sevenDaysAgo;
   };
 
   const isOrderCancellable = (order) => {
@@ -420,238 +444,381 @@ const MyOrders = () => {
 
   const handleReturnSuccess = () => {
     fetchOrders();
-    alert('Return request submitted successfully! We will contact you within 24 hours.');
+    setSuccessMessage('Return request submitted successfully! We will contact you within 24 hours.');
+    setTimeout(() => setSuccessMessage(''), 5000);
   };
 
   const handleCancelSuccess = () => {
     fetchOrders();
-    alert('Order cancelled successfully! Refund will be processed within 5-7 business days.');
+    setSuccessMessage('Order cancelled successfully! Refund will be processed within 5-7 business days.');
+    setTimeout(() => setSuccessMessage(''), 5000);
+  };
+
+  const getStatusBadgeColor = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'pending':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'confirmed':
+        return 'bg-blue-100 text-blue-800';
+      case 'processing':
+        return 'bg-indigo-100 text-indigo-800';
+      case 'shipped':
+        return 'bg-purple-100 text-purple-800';
+      case 'delivered':
+        return 'bg-green-100 text-green-800';
+      case 'cancelled':
+        return 'bg-red-100 text-red-800';
+      case 'return_requested':
+      case 'returned':
+        return 'bg-orange-100 text-orange-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
   };
 
   if (loading) {
-    return <div className="text-center py-20">Loading your orders...</div>;
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading your orders...</p>
+        </div>
+      </div>
+    );
   }
   
   if (!currentUserId) {
-    return <div className="text-center py-20">Please login to view your orders</div>;
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center max-w-md p-8 bg-white rounded-xl shadow-lg">
+          <h2 className="text-2xl font-bold text-gray-800 mb-4">Please Login</h2>
+          <p className="text-gray-600 mb-6">You need to be logged in to view your orders.</p>
+          <button
+            onClick={() => navigate('/login')}
+            className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+          >
+            Go to Login
+          </button>
+        </div>
+      </div>
+    );
   }
   
   if (orders.length === 0) {
-    return <div className="text-center py-20">You haven't placed any orders yet.</div>;
+    return (
+      <div className="min-h-screen bg-gray-50 py-12">
+        <div className="max-w-4xl mx-auto p-4">
+          <h1 className="text-3xl font-bold mb-6">My Orders</h1>
+          <div className="bg-white rounded-xl shadow-lg p-12 text-center">
+            <div className="text-6xl mb-4 text-gray-300">📦</div>
+            <h2 className="text-2xl font-bold text-gray-700 mb-3">No Orders Yet</h2>
+            <p className="text-gray-500 mb-8">You haven't placed any orders yet. Start shopping to see your orders here!</p>
+            <button
+              onClick={() => navigate('/')}
+              className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+            >
+              Start Shopping
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="container mx-auto p-4 py-12">
-      <h1 className="text-3xl font-bold mb-6">My Orders</h1>
-      
-      {/* Order Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <div className="bg-white p-4 rounded-lg shadow border">
-          <p className="text-gray-500 text-sm">Total Orders</p>
-          <p className="text-2xl font-bold">{orders.length}</p>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow border">
-          <p className="text-gray-500 text-sm">Delivered</p>
-          <p className="text-2xl font-bold text-green-600">
-            {orders.filter(o => o.status?.toLowerCase() === 'delivered').length}
-          </p>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow border">
-          <p className="text-gray-500 text-sm">Processing</p>
-          <p className="text-2xl font-bold text-blue-600">
-            {orders.filter(o => ['confirmed', 'processing', 'shipped'].includes(o.status?.toLowerCase())).length}
-          </p>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow border">
-          <p className="text-gray-500 text-sm">Cancelled/Returned</p>
-          <p className="text-2xl font-bold text-red-600">
-            {orders.filter(o => ['cancelled', 'returned'].includes(o.status?.toLowerCase())).length}
-          </p>
-        </div>
-      </div>
+    <div className="min-h-screen bg-gray-50 py-12">
+      <div className="max-w-6xl mx-auto p-4">
+        {/* Success Message */}
+        {successMessage && (
+          <div className="mb-6 p-4 bg-green-100 text-green-800 rounded-lg border border-green-200">
+            <div className="flex items-center">
+              <span className="text-green-600 mr-2">✓</span>
+              {successMessage}
+            </div>
+          </div>
+        )}
 
-      <div className="space-y-6">
-        {orders.map((order) => {
-          const status = order.status?.toLowerCase() || 'confirmed';
-          const canReturn = isOrderReturnable(order);
-          const canCancel = isOrderCancellable(order);
-          const hasReturnRequest = order.status?.toLowerCase() === 'return_requested';
+        <h1 className="text-3xl font-bold mb-2">My Orders</h1>
+        <p className="text-gray-600 mb-8">View and manage all your orders in one place</p>
+        
+        {/* Order Statistics */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+          <div className="bg-white p-4 rounded-lg shadow border">
+            <p className="text-gray-500 text-sm">Total Orders</p>
+            <p className="text-2xl font-bold">{orders.length}</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow border">
+            <p className="text-gray-500 text-sm">Delivered</p>
+            <p className="text-2xl font-bold text-green-600">
+              {orders.filter(o => o.status?.toLowerCase() === 'delivered').length}
+            </p>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow border">
+            <p className="text-gray-500 text-sm">Processing</p>
+            <p className="text-2xl font-bold text-blue-600">
+              {orders.filter(o => ['confirmed', 'processing', 'shipped'].includes(o.status?.toLowerCase())).length}
+            </p>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow border">
+            <p className="text-gray-500 text-sm">Cancelled/Returned</p>
+            <p className="text-2xl font-bold text-red-600">
+              {orders.filter(o => ['cancelled', 'returned'].includes(o.status?.toLowerCase())).length}
+            </p>
+          </div>
+        </div>
 
-          return (
-            <div 
-              key={order.id} 
-              className="bg-white p-6 shadow-lg rounded-xl border border-gray-100 hover:shadow-xl transition-shadow"
-            >
-              {/* ORDER HEADER */}
-              <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4 mb-6">
-                <div className="space-y-2">
-                  <p className="text-lg font-semibold">Order ID: {order.orderId || order.id}</p>
-                  <div className="flex flex-wrap gap-4">
-                    <p className="text-gray-500">
-                      Date: {order.createdAt?.toDate 
-                        ? order.createdAt.toDate().toLocaleDateString() 
-                        : new Date(order.createdAt).toLocaleDateString()}
-                    </p>
-                    {order.returnRequest && (
-                      <p className="text-orange-600 text-sm">
-                        Return Request: {order.returnRequest.status}
+        {/* Orders List */}
+        <div className="space-y-6">
+          {orders.map((order) => {
+            const status = order.status?.toLowerCase() || 'confirmed';
+            const canReturn = isOrderReturnable(order);
+            const canCancel = isOrderCancellable(order);
+            const hasReturnRequest = status === 'return_requested';
+
+            return (
+              <div 
+                key={order.id} 
+                className="bg-white p-6 shadow-lg rounded-xl border border-gray-100 hover:shadow-xl transition-shadow"
+              >
+                {/* ORDER HEADER */}
+                <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4 mb-6">
+                  <div className="space-y-2">
+                    <p className="text-lg font-semibold">Order ID: {order.orderId || `ORD-${order.id.substring(0, 8)}`}</p>
+                    <div className="flex flex-wrap gap-4">
+                      <p className="text-gray-500">
+                        Date: {order.createdAt?.toDate 
+                          ? order.createdAt.toDate().toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })
+                          : new Date(order.createdAt).toLocaleDateString()}
+                      </p>
+                      {order.paymentMethod && (
+                        <p className="text-gray-500">
+                          Payment: {order.paymentMethod.toUpperCase()}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col items-end gap-2">
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusBadgeColor(status)}`}>
+                      {status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ')}
+                    </span>
+                    
+                    {hasReturnRequest && order.returnRequest?.reason && (
+                      <p className="text-sm text-gray-600">
+                        Return Reason: {order.returnRequest.reason}
                       </p>
                     )}
                   </div>
                 </div>
 
-                <div className="flex flex-col items-end gap-2">
-                  <span className={`px-3 py-1 rounded-full text-sm font-medium 
-                    ${status === 'cancelled'
-                      ? 'bg-red-100 text-red-800'
-                      : status === 'returned' || status === 'return_requested'
-                      ? 'bg-orange-100 text-orange-800'
-                      : status === 'delivered'
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-blue-100 text-blue-800'}`}
-                  >
-                    {status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ')}
-                  </span>
-                  
-                  {hasReturnRequest && order.returnRequest?.reason && (
-                    <p className="text-sm text-gray-600">
-                      Reason: {order.returnRequest.reason}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* ORDER ITEMS DISPLAY */}
-              <div className="space-y-4 mb-6">
-                {order.items?.map((item, index) => (
-                  <div 
-                    key={index} 
-                    className="flex items-center gap-4 border-b pb-4 last:border-0"
-                  >
-                    <img 
-                      src={item.image || item.imageUrl || item.imageUrls?.[0] || '/placeholder-image.jpg'} 
-                      alt={item.name}
-                      className="w-20 h-20 object-cover rounded-lg border"
-                      onError={(e) => {
-                        e.target.src = '/placeholder-image.jpg';
-                      }}
-                    />
-                    
-                    <div className="flex-1">
-                      <p className="font-semibold text-lg">{item.name}</p>
-                      <div className="flex flex-wrap gap-4 text-sm text-gray-500">
-                        <p>Qty: {item.quantity}</p>
-                        <p>Price: ₹{item.price?.toFixed(2)}</p>
+                {/* ORDER ITEMS DISPLAY WITH SELLER ID */}
+                <div className="space-y-4 mb-6">
+                  {order.items?.map((item, index) => (
+                    <div 
+                      key={index} 
+                      className="flex items-center gap-4 border-b pb-4 last:border-0"
+                    >
+                      <img 
+                        src={item.image || item.imageUrl || '/placeholder-image.jpg'} 
+                        alt={item.name}
+                        className="w-20 h-20 object-cover rounded-lg border"
+                        onError={(e) => {
+                          e.target.src = '/placeholder-image.jpg';
+                        }}
+                      />
+                      
+                      <div className="flex-1">
+                        <p className="font-semibold text-lg">{item.name}</p>
+                        <div className="flex flex-wrap gap-2 text-sm text-gray-500">
+                          <p>Qty: {item.quantity}</p>
+                          <p>Price: ₹{item.price?.toFixed(2)}</p>
+                          {/* DYNAMIC SELLER ID DISPLAY */}
+                          {item.sellerId && (
+                            <p className="bg-gray-100 px-2 py-0.5 rounded border text-xs">
+                              Seller ID: {item.sellerId}
+                            </p>
+                          )}
+                          {item.selectedColor && (
+                            <p>Color: {item.selectedColor}</p>
+                          )}
+                          {item.selectedSize && (
+                            <p>Size: {item.selectedSize}</p>
+                          )}
+                          {item.selectedRam && (
+                            <p>RAM: {item.selectedRam}</p>
+                          )}
+                        </div>
+                        <p className="text-green-700 font-medium">
+                          Item Total: ₹{(item.price * item.quantity).toFixed(2)}
+                        </p>
                       </div>
-                      <p className="text-green-700 font-medium">
-                        Total: ₹{(item.price * item.quantity).toFixed(2)}
-                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* SHIPPING INFORMATION */}
+                {order.customerInfo && (
+                  <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                    <h3 className="font-semibold mb-2">Shipping Information</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                      <p><span className="text-gray-500">Name:</span> {order.customerInfo.name}</p>
+                      <p><span className="text-gray-500">Phone:</span> {order.customerInfo.phone}</p>
+                      <p className="md:col-span-2"><span className="text-gray-500">Address:</span> {order.customerInfo.address}</p>
+                      <p><span className="text-gray-500">City:</span> {order.customerInfo.city}</p>
+                      <p><span className="text-gray-500">Pincode:</span> {order.customerInfo.pincode}</p>
                     </div>
                   </div>
-                ))}
-              </div>
+                )}
 
-              {/* ORDER SUMMARY */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mt-6 pt-6 border-t">
-                <div>
-                  <p className="text-2xl font-bold text-green-600">
-                    Total: ₹{order.amount?.toFixed(2)}
-                  </p>
-                  {order.paymentMethod && (
-                    <p className="text-gray-500 text-sm">
-                      Paid via: {order.paymentMethod}
+                {/* ORDER SUMMARY */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mt-6 pt-6 border-t">
+                  <div>
+                    <p className="text-2xl font-bold text-green-600">
+                      Total: ₹{order.amount?.toFixed(2)}
                     </p>
-                  )}
-                </div>
+                    {order.razorpayOrderId && (
+                      <p className="text-gray-500 text-sm">
+                        Payment ID: {order.razorpayOrderId.substring(0, 10)}...
+                      </p>
+                    )}
+                  </div>
 
-                {/* ACTION BUTTONS */}
-                <div className="flex flex-wrap gap-3">
-                  <button 
-                    onClick={() => navigate(`/invoice?orderId=${order.id}`)}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    View Invoice
-                  </button>
-                  
-                  {canCancel && (
-                    <button 
-                      onClick={() => handleCancelClick(order)}
-                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                    >
-                      Cancel Order
-                    </button>
-                  )}
-                  
-                  {canReturn && (
-                    <button 
-                      onClick={() => handleReturnClick(order)}
-                      className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
-                    >
-                      Return Order
-                    </button>
-                  )}
+                  {/* ACTION BUTTONS */}
+                  <div className="flex flex-wrap gap-3">
+                    {order.invoiceUrl ? (
+                      <a 
+                        href={order.invoiceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        View Invoice
+                      </a>
+                    ) : (
+                      <button 
+                        onClick={() => navigate(`/invoice?orderId=${order.id}`)}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        View Invoice
+                      </button>
+                    )}
+                    
+                    {canCancel && (
+                      <button 
+                        onClick={() => handleCancelClick(order)}
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                      >
+                        Cancel Order
+                      </button>
+                    )}
+                    
+                    {canReturn && (
+                      <button 
+                        onClick={() => handleReturnClick(order)}
+                        className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
+                      >
+                        Return Order
+                      </button>
+                    )}
 
-                  {status === 'shipped' && (
-                    <button 
-                      onClick={() => navigate(`/track-order?orderId=${order.id}`)}
-                      className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-                    >
-                      Track Order
-                    </button>
-                  )}
+                    {status === 'shipped' && (
+                      <button 
+                        onClick={() => navigate(`/track-order?orderId=${order.id}`)}
+                        className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                      >
+                        Track Order
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
+            );
+          })}
+        </div>
+
+        {/* MODALS */}
+        {showReturnForm && selectedOrder && (
+          <ReturnOrderForm
+            order={selectedOrder}
+            userId={currentUserId}
+            onClose={() => {
+              setShowReturnForm(false);
+              setSelectedOrder(null);
+            }}
+            onSuccess={handleReturnSuccess}
+          />
+        )}
+
+        {showCancelForm && selectedOrder && (
+          <CancelOrderForm
+            order={selectedOrder}
+            userId={currentUserId}
+            onClose={() => {
+              setShowCancelForm(false);
+              setSelectedOrder(null);
+            }}
+            onSuccess={handleCancelSuccess}
+          />
+        )}
+
+        {/* RETURN & CANCELLATION POLICY */}
+        <div className="mt-12 p-6 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border border-blue-100">
+          <h3 className="text-xl font-bold mb-4">📦 Return & Cancellation Policy</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div>
+              <h4 className="font-semibold text-lg mb-3 flex items-center">
+                <span className="text-green-600 mr-2">✓</span>
+                Return Policy
+              </h4>
+              <ul className="space-y-2 text-gray-600">
+                <li className="flex items-start">
+                  <span className="text-blue-500 mr-2">•</span>
+                  <span>7-day return window from delivery date</span>
+                </li>
+                <li className="flex items-start">
+                  <span className="text-blue-500 mr-2">•</span>
+                  <span>Items must be unused and in original packaging</span>
+                </li>
+                <li className="flex items-start">
+                  <span className="text-blue-500 mr-2">•</span>
+                  <span>Refunds processed within 5-7 business days</span>
+                </li>
+                <li className="flex items-start">
+                  <span className="text-blue-500 mr-2">•</span>
+                  <span>Free pickup for eligible returns</span>
+                </li>
+              </ul>
             </div>
-          );
-        })}
-      </div>
-
-      {/* MODALS */}
-      {showReturnForm && selectedOrder && (
-        <ReturnOrderForm
-          order={selectedOrder}
-          userId={currentUserId}
-          onClose={() => {
-            setShowReturnForm(false);
-            setSelectedOrder(null);
-          }}
-          onSuccess={handleReturnSuccess}
-        />
-      )}
-
-      {showCancelForm && selectedOrder && (
-        <CancelOrderForm
-          order={selectedOrder}
-          userId={currentUserId}
-          onClose={() => {
-            setShowCancelForm(false);
-            setSelectedOrder(null);
-          }}
-          onSuccess={handleCancelSuccess}
-        />
-      )}
-
-      {/* RETURN POLICY INFO */}
-      <div className="mt-12 p-6 bg-gray-50 rounded-xl">
-        <h3 className="text-xl font-bold mb-4">Return & Cancellation Policy</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <h4 className="font-semibold text-lg mb-2">📦 Returns</h4>
-            <ul className="space-y-2 text-gray-600">
-              <li>• 7-day return window from delivery date</li>
-              <li>• Items must be unused and in original condition</li>
-              <li>• Refunds processed within 5-7 business days</li>
-              <li>• Free pickup for eligible returns</li>
-            </ul>
-          </div>
-          <div>
-            <h4 className="font-semibold text-lg mb-2">❌ Cancellations</h4>
-            <ul className="space-y-2 text-gray-600">
-              <li>• Cancel within 24 hours for instant refund</li>
-              <li>• Orders in 'processing' can be cancelled</li>
-              <li>• Shipped orders require customer support</li>
-              <li>• Refund method same as payment method</li>
-            </ul>
+            <div>
+              <h4 className="font-semibold text-lg mb-3 flex items-center">
+                <span className="text-red-600 mr-2">✗</span>
+                Cancellation Policy
+              </h4>
+              <ul className="space-y-2 text-gray-600">
+                <li className="flex items-start">
+                  <span className="text-blue-500 mr-2">•</span>
+                  <span>Cancel within 24 hours for instant refund</span>
+                </li>
+                <li className="flex items-start">
+                  <span className="text-blue-500 mr-2">•</span>
+                  <span>Orders in 'processing' can be cancelled</span>
+                </li>
+                <li className="flex items-start">
+                  <span className="text-blue-500 mr-2">•</span>
+                  <span>Shipped orders require customer support</span>
+                </li>
+                <li className="flex items-start">
+                  <span className="text-blue-500 mr-2">•</span>
+                  <span>Refund method same as payment method</span>
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
       </div>

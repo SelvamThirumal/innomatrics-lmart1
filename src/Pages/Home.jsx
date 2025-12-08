@@ -14,8 +14,38 @@ const Home = () => {
   const [postersLoading, setPostersLoading] = useState(true);
   const [slidesLoading, setSlidesLoading] = useState(true);
   const [current, setCurrent] = useState(0);
+  const [toasts, setToasts] = useState([]);
 
-  // Helper function to format poster date
+  // Add toast function for cart notifications
+  const addToast = (product) => {
+    const newToast = {
+      id: Date.now(),
+      productName: product.name,
+      productImage: product.image,
+      price: product.offerPrice,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    
+    setToasts(prev => [newToast, ...prev]);
+    
+    // Auto remove toast after 3 seconds
+    setTimeout(() => {
+      setToasts(prev => prev.filter(toast => toast.id !== newToast.id));
+    }, 3000);
+  };
+
+  // Handle add to cart with toast notification
+  const handleAddToCart = (product, e) => {
+    e.preventDefault();
+    addToCart({
+      ...product, 
+      image: product.image,
+      id: product.id
+    });
+    addToast(product);
+  };
+
+  // Helper function to format poster date from Firebase timestamp
   const formatPosterDate = (timestamp) => {
     if (!timestamp) return 'No date';
     
@@ -127,9 +157,16 @@ const Home = () => {
     fetchPosters();
   }, []);
 
-  // Fetch slides from Firebase
+  // Fetch slides from Firebase for hero section
   useEffect(() => {
-    const FIREBASE_POSTER_IMAGE_URL = "https://firebasestorage.googleapis.com/v0/b/emart-ecommerce.firebasestorage.app/o/posters%2F1764734534069-paper-bags-different-colors-blue-background-top-view%20(1).jpg?alt=media&token=5d843cbb-c03b-494e-af81-f11581406735";
+    // Define all 7 unique URLs from provided poster data for fallback
+    const SLIDE_URL_1 = "https://firebasestorage.googleapis.com/v0/b/emart-ecommerce.firebasestorage.app/o/posters%2F1764734534069-paper-bags-different-colors-blue-background-top-view%20(1).jpg?alt=media&token=5d843cbb-c03b-494e-af81-f11581406735";
+    const SLIDE_URL_2 = "https://firebasestorage.googleapis.com/v0/b/emart-ecommerce.firebasestorage.app/o/posters%2F1764952259854-2%20layer%20f.jpeg?alt=media&token=eb5f0b70-71cd-4d25-94f0-dab20d731fbe";
+    const SLIDE_URL_3 = "https://firebasestorage.googleapis.com/v0/b/emart-ecommerce.firebasestorage.app/o/posters%2F1764941573918-computer-mouse-paper-bags-blue-background-top-view.jpg?alt=media&token=fb2d177c-0aa0-461a-b426-eb24d50c6c66";
+    const SLIDE_URL_4 = "https://firebasestorage.googleapis.com/v0/b/emart-ecommerce.firebasestorage.app/o/posters%2F1764938945022-range-bright-art-supplies.jpg?alt=media&token=771dca75-7c78-43b7-8a97-6fd6b26990cc";
+    const SLIDE_URL_5 = "https://firebasestorage.googleapis.com/v0/b/emart-ecommerce.firebasestorage.app/o/posters%2F1764941440608-abstract-blur-shopping-mall-retail-store.jpg?alt=media&token=0606ecd5-d2d1-42d0-ba86-5af7d2394c38";
+    const SLIDE_URL_6 = "https://firebasestorage.googleapis.com/v0/b/emart-ecommerce.firebasestorage.app/o/posters%2F1764941916491-abstract-blur-shopping-mall-retail-store.jpg?alt=media&token=6d7928d2-5735-444f-a0eb-e3623f41545b";
+    const SLIDE_URL_7 = "https://firebasestorage.googleapis.com/v0/b/emart-ecommerce.firebasestorage.app/o/posters%2F1764952977753-Screenshot_2025-11-14-17-01-00-18_3d9111e2d3171bf4882369f490c087b4.jpg?alt=media&token=aa8bf87a-2528-4c97-9409-d4c794ed2369";
     
     const fetchSlides = async () => {
       try {
@@ -155,49 +192,16 @@ const Home = () => {
 
         console.log('Fetched slides from Firebase:', fetchedSlides);
         
-        // If no slides in Firebase, use default slides with the specified poster URL
+        // If no slides in Firebase, use default slides with 7 UNIQUE poster URLs
         if (fetchedSlides.length === 0) {
           setSlides([
-            {
-              id: 'default-1',
-              // MODIFIED URL
-              imageUrl: FIREBASE_POSTER_IMAGE_URL, 
-              alt: "Printing Services",
-              title: "We Provide Offset Printing & Digital Printing",
-              subtitle: "Large F.M. (c.o.m.epso.e.F.M.R.) are available here"
-            },
-            {
-              id: 'default-2',
-              // MODIFIED URL
-              imageUrl: FIREBASE_POSTER_IMAGE_URL,
-              alt: "Digital Printing",
-              title: "Premium Quality Printing Services",
-              subtitle: "High-quality prints for all your business needs"
-            },
-            {
-              id: 'default-3',
-              // MODIFIED URL
-              imageUrl: FIREBASE_POSTER_IMAGE_URL,
-              alt: "Office Supplies",
-              title: "Complete Office Solutions",
-              subtitle: "Everything you need for your office in one place"
-            },
-            {
-              id: 'default-4',
-              // MODIFIED URL
-              imageUrl: FIREBASE_POSTER_IMAGE_URL,
-              alt: "Fast Delivery",
-              title: "Same Day Printing & Delivery",
-              subtitle: "Get your prints delivered on the same day"
-            },
-            {
-              id: 'default-5',
-              // MODIFIED URL
-              imageUrl: FIREBASE_POSTER_IMAGE_URL,
-              alt: "Digital Solutions",
-              title: "Digital Printing Services",
-              subtitle: "Modern digital printing for modern businesses"
-            }
+            { id: 'default-1', imageUrl: SLIDE_URL_1, alt: "Printing Services", title: "Offset Printing", subtitle: "Large F.M. available here" },
+            { id: 'default-2', imageUrl: SLIDE_URL_2, alt: "Digital Printing", title: "Premium Quality Prints", subtitle: "High-quality prints for business" },
+            { id: 'default-3', imageUrl: SLIDE_URL_3, alt: "Office Supplies", title: "Complete Office Solutions", subtitle: "Everything for your office" },
+            { id: 'default-4', imageUrl: SLIDE_URL_4, alt: "Art Supplies", title: "Range of Art Supplies", subtitle: "New creative posters available" },
+            { id: 'default-5', imageUrl: SLIDE_URL_5, alt: "Shopping Mall View", title: "Digital Solutions", subtitle: "Abstract blur of retail store" },
+            { id: 'default-6', imageUrl: SLIDE_URL_6, alt: "Retail Store", title: "Digital Printing Services", subtitle: "Abstract blur of shopping mall" },
+            { id: 'default-7', imageUrl: SLIDE_URL_7, alt: "Testing Poster", title: "L-Mart Testing", subtitle: "Screenshot from poster upload" }
           ]);
         } else {
           setSlides(fetchedSlides);
@@ -205,32 +209,12 @@ const Home = () => {
         
       } catch (err) {
         console.error('Error fetching slides from Firebase:', err);
-        // Fallback to default slides if Firebase fails (also modified)
+        // Fallback to default slides if Firebase fails (Modified to use unique URLs)
+        // Using first 3 as a safe minimal fallback
         setSlides([
-          {
-            id: 'default-1',
-            // MODIFIED URL
-            imageUrl: FIREBASE_POSTER_IMAGE_URL,
-            alt: "Printing Services",
-            title: "We Provide Offset Printing & Digital Printing",
-            subtitle: "Large F.M. (c.o.m.epso.e.F.M.R.) are available here"
-          },
-          {
-            id: 'default-2',
-            // MODIFIED URL
-            imageUrl: FIREBASE_POSTER_IMAGE_URL,
-            alt: "Digital Printing",
-            title: "Premium Quality Printing Services",
-            subtitle: "High-quality prints for all your business needs"
-          },
-          {
-            id: 'default-3',
-            // MODIFIED URL
-            imageUrl: FIREBASE_POSTER_IMAGE_URL,
-            alt: "Office Supplies",
-            title: "Complete Office Solutions",
-            subtitle: "Everything you need for your office in one place"
-          }
+            { id: 'default-1', imageUrl: SLIDE_URL_1, alt: "Printing Services", title: "Offset Printing", subtitle: "Large F.M. available here" },
+            { id: 'default-2', imageUrl: SLIDE_URL_2, alt: "Digital Printing", title: "Premium Quality Prints", subtitle: "High-quality prints for business" },
+            { id: 'default-3', imageUrl: SLIDE_URL_3, alt: "Office Supplies", title: "Complete Office Solutions", subtitle: "Everything for your office" }
         ]);
       } finally {
         setSlidesLoading(false);
@@ -240,7 +224,7 @@ const Home = () => {
     fetchSlides();
   }, []);
 
-  // Auto change every 4 sec
+  // Auto change slides every 4 seconds
   useEffect(() => {
     if (slides.length === 0) return;
     
@@ -250,6 +234,7 @@ const Home = () => {
     return () => clearInterval(interval);
   }, [slides.length]);
 
+  // Separate featured products from regular products
   const featuredProducts = products.filter((product) => product.featured);
   const otherProducts = products.filter((product) => !product.featured);
 
@@ -270,6 +255,77 @@ const Home = () => {
 
   return (
     <div className="min-h-screen bg-white relative overflow-hidden">
+      {/* Toast Notifications Container */}
+      <div className="fixed top-4 right-4 z-50 space-y-3 max-w-sm">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className="bg-white rounded-xl shadow-2xl border border-gray-200 p-4 animate-slide-in-right"
+            style={{
+              animation: 'slideInRight 0.3s ease-out, fadeOut 0.3s ease-out 2.7s'
+            }}
+          >
+            <div className="flex items-start space-x-3">
+              {/* Product Image */}
+              <div className="relative">
+                <img
+                  src={toast.productImage}
+                  alt={toast.productName}
+                  className="w-14 h-14 object-cover rounded-lg"
+                  onError={(e) => {
+                    e.target.src = 'https://placehold.co/56x56?text=No+Image';
+                  }}
+                />
+                <div className="absolute -top-2 -right-2 bg-orange-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">
+                  ✓
+                </div>
+              </div>
+              
+              {/* Toast Content */}
+              <div className="flex-1">
+                <div className="flex justify-between items-start">
+                  <h4 className="font-bold text-gray-900 text-sm">Added to cart!</h4>
+                  <span className="text-xs text-gray-500">{toast.timestamp}</span>
+                </div>
+                <p className="text-gray-700 text-sm mt-1 truncate">{toast.productName}</p>
+                <div className="flex items-center justify-between mt-2">
+                  <span className="font-bold text-orange-600">₹{toast.price}</span>
+                  <Link 
+                    to="/cart" 
+                    className="text-purple-600 hover:text-purple-800 text-xs font-medium flex items-center"
+                  >
+                    View Cart
+                    <svg className="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </Link>
+                </div>
+              </div>
+              
+              {/* Close Button */}
+              <button
+                onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            {/* Progress Bar */}
+            <div className="mt-3 h-1 bg-gray-200 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-gradient-to-r from-green-400 to-green-500 rounded-full animate-progress"
+                style={{
+                  animation: 'progressBar 3s linear forwards'
+                }}
+              ></div>
+            </div>
+          </div>
+        ))}
+      </div>
+
       {/* Error State */}
       {error && (
         <div className="fixed inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-50">
@@ -290,7 +346,7 @@ const Home = () => {
         </div>
       )}
 
-      {/* Hero Section */}
+      {/* Hero Section with Slideshow */}
       <div className="relative w-full h-[70vh] sm:h-[75vh] md:h-[80vh] lg:h-[85vh] xl:h-[90vh] overflow-hidden">
         {slidesLoading ? (
           <div className="absolute inset-0 bg-gray-200 animate-pulse flex items-center justify-center">
@@ -539,128 +595,97 @@ const Home = () => {
         </div>
       </div>
 
-      {/* Sub Category Section */}
+      {/* Main Navigation Categories Section - Replaces Sub Category */}
       <div className="py-12 bg-white">
         <div className="container-responsive">
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center px-6 py-2 bg-gradient-to-r from-orange-400 to-red-500 text-white rounded-full text-sm font-semibold mb-4">
-              <span className="mr-2">◀</span>
-              SUB CATEGORY
-              <span className="ml-2">▶</span>
-            </div>
+            <h2 className="text-3xl font-bold text-gray-900 mb-4 animate-fade-in">
+              Explore Our Categories
+            </h2>
+            <p className="text-lg text-gray-600 animate-slide-up">
+              Browse through our wide range of products and services
+            </p>
           </div>
           
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6 mb-8">
-            {/* Logo Design */}
-            <Link to="/newstoday" className="flex flex-col items-center group cursor-pointer">
-              <div className="w-24 h-24 bg-gradient-to-br from-blue-100 to-blue-200 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300 overflow-hidden">
-                <img 
-                  src="https://images.unsplash.com/photo-1611224923853-80b023f02d71?ixlib=rb-4.0.3&auto=format&fit=crop&w=80&h=80&q=80" 
-                  alt="Logo Design" 
-                  className="w-20 h-20 rounded-full object-cover shadow-md"
-                />
-              </div>
-              <h3 className="text-sm font-medium text-gray-900 text-center">Logo Design</h3>
-            </Link>
-
-            {/* Web Design */}
+          {/* 5 Main Category Boxes */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
+            {/* E-Store */}
             <Link to="/e-market" className="flex flex-col items-center group cursor-pointer">
-              <div className="w-24 h-24 bg-gradient-to-br from-green-100 to-green-200 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300 overflow-hidden">
-                <img 
-                  src="https://images.unsplash.com/photo-1547658719-da2b51169166?ixlib=rb-4.0.3&auto=format&fit=crop&w=80&h=80&q=80" 
-                  alt="Web Design" 
-                  className="w-20 h-20 rounded-full object-cover shadow-md"
-                />
+              <div className="w-24 h-24 bg-gradient-to-br from-blue-100 to-blue-200 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300 shadow-lg">
+                <svg className="w-12 h-12 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
               </div>
-              <h3 className="text-sm font-medium text-gray-900 text-center">Web Design</h3>
+              <h3 className="text-sm font-medium text-gray-900 text-center">E-Store</h3>
+              <p className="text-xs text-gray-500 text-center mt-1">Digital Products</p>
             </Link>
 
-            {/* T-shirt Design */}
-            <Link to="/printing" className="flex flex-col items-center group cursor-pointer">
-              <div className="w-24 h-24 bg-gradient-to-br from-purple-100 to-purple-200 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300 overflow-hidden">
-                <img 
-                  src="https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?ixlib=rb-4.0.3&auto=format&fit=crop&w=80&h=80&q=80" 
-                  alt="T-shirt Design" 
-                  className="w-20 h-20 rounded-full object-cover shadow-md"
-                />
+            {/* Oldee */}
+            <Link to="./Oldee" className="flex flex-col items-center group cursor-pointer">
+              <div className="w-24 h-24 bg-gradient-to-br from-green-100 to-green-200 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300 shadow-lg">
+                <svg className="w-12 h-12 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" />
+                </svg>
               </div>
-              <h3 className="text-sm font-medium text-gray-900 text-center">T-shirt Design</h3>
+              <h3 className="text-sm font-medium text-gray-900 text-center">Oldee</h3>
+              <p className="text-xs text-gray-500 text-center mt-1">Vintage Items</p>
             </Link>
 
-            {/* Flyer Design */}
-            <Link to="/printing" className="flex flex-col items-center group cursor-pointer">
-              <div className="w-24 h-24 bg-gradient-to-br from-yellow-100 to-yellow-200 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300 overflow-hidden">
-                <img 
-                  src="https://images.unsplash.com/photo-1586281380349-632531db7ed4?ixlib=rb-4.0.3&auto=format&fit=crop&w=80&h=80&q=80" 
-                  alt="Flyer Design" 
-                  className="w-20 h-20 rounded-full object-cover shadow-md"
-                />
+            {/* News Today */}
+            <Link to="./news-today" className="flex flex-col items-center group cursor-pointer">
+              <div className="w-24 h-24 bg-gradient-to-br from-red-100 to-red-200 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300 shadow-lg">
+                <svg className="w-12 h-12 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+                </svg>
               </div>
-              <h3 className="text-sm font-medium text-gray-900 text-center">Flyer Design</h3>
+              <h3 className="text-sm font-medium text-gray-900 text-center">Market News</h3>
+              <p className="text-xs text-gray-500 text-center mt-1">Latest Updates</p>
             </Link>
 
-            {/* Brochure Design */}
+            {/* Printing */}
             <Link to="/printing" className="flex flex-col items-center group cursor-pointer">
-              <div className="w-24 h-24 bg-gradient-to-br from-pink-100 to-pink-200 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300 overflow-hidden">
-                <img 
-                  src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=80&h=80&q=80" 
-                  alt="Brochure Design" 
-                  className="w-20 h-20 rounded-full object-cover shadow-md"
-                />
+              <div className="w-24 h-24 bg-gradient-to-br from-purple-100 to-purple-200 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300 shadow-lg">
+                <svg className="w-12 h-12 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                </svg>
               </div>
-              <h3 className="text-sm font-medium text-gray-900 text-center">Brochure Design</h3>
+              <h3 className="text-sm font-medium text-gray-900 text-center">Printing</h3>
+              <p className="text-xs text-gray-500 text-center mt-1">Print Services</p>
             </Link>
 
-            {/* Business Card Design */}
-            <Link to="/printing" className="flex flex-col items-center group cursor-pointer">
-              <div className="w-24 h-24 bg-gradient-to-br from-indigo-100 to-indigo-200 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300 overflow-hidden">
-                <img 
-                  src="https://images.unsplash.com/photo-1558618666-fcd25c85cd64?ixlib=rb-4.0.3&auto=format&fit=crop&w=80&h=80&q=80" 
-                  alt="Business Card Design" 
-                  className="w-20 h-20 rounded-full object-cover shadow-md"
-                />
+            {/* Local Market */}
+            <Link to="/local-market" className="flex flex-col items-center group cursor-pointer">
+              <div className="w-24 h-24 bg-gradient-to-br from-orange-100 to-orange-200 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300 shadow-lg">
+                <svg className="w-12 h-12 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
               </div>
-              <h3 className="text-sm font-medium text-gray-900 text-center">Business Card Design</h3>
+              <h3 className="text-sm font-medium text-gray-900 text-center">Local Market</h3>
+              <p className="text-xs text-gray-500 text-center mt-1">Local Products</p>
             </Link>
           </div>
 
-          {/* Sample Work Display */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {/* Sample 1 */}
-            <Link to="/printing" className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-300">
-              <img 
-                src="https://images.unsplash.com/photo-1558618666-fcd25c85cd64?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80" 
-                alt="Sample Work 1" 
-                className="w-full h-48 object-cover"
-              />
-            </Link>
-
-            {/* Sample 2 */}
-            <Link to="/e-market" className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-300">
-              <img 
-                src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80" 
-                alt="Sample Work 2" 
-                className="w-full h-48 object-cover"
-              />
-            </Link>
-
-            {/* Sample 3 */}
-            <Link to="/local-market" className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-300">
-              <img 
-                src="https://images.unsplash.com/photo-1560472354-b33ff0c44a43?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80" 
-                alt="Sample Work 3" 
-                className="w-full h-48 object-cover"
-              />
-            </Link>
-
-            {/* Sample 4 */}
-            <Link to="/newstoday" className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-300">
-              <img 
-                src="https://images.unsplash.com/photo-1586281380349-632531db7ed4?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80" 
-                alt="Sample Work 4" 
-                className="w-full h-48 object-cover"
-              />
-            </Link>
+          {/* Feature Highlights */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-12">
+            <div className="bg-gradient-to-br from-blue-50 to-white p-6 rounded-xl shadow-md hover:shadow-lg transition-shadow duration-300">
+              <h3 className="font-bold text-lg text-blue-700 mb-2">Wide Selection</h3>
+              <p className="text-gray-600 text-sm">Thousands of products across all categories</p>
+            </div>
+            
+            <div className="bg-gradient-to-br from-green-50 to-white p-6 rounded-xl shadow-md hover:shadow-lg transition-shadow duration-300">
+              <h3 className="font-bold text-lg text-green-700 mb-2">Quality Assured</h3>
+              <p className="text-gray-600 text-sm">Premium quality products and services</p>
+            </div>
+            
+            <div className="bg-gradient-to-br from-purple-50 to-white p-6 rounded-xl shadow-md hover:shadow-lg transition-shadow duration-300">
+              <h3 className="font-bold text-lg text-purple-700 mb-2">Fast Delivery</h3>
+              <p className="text-gray-600 text-sm">Quick and reliable delivery service</p>
+            </div>
+            
+            <div className="bg-gradient-to-br from-orange-50 to-white p-6 rounded-xl shadow-md hover:shadow-lg transition-shadow duration-300">
+              <h3 className="font-bold text-lg text-orange-700 mb-2">Easy Returns</h3>
+              <p className="text-gray-600 text-sm">Hassle-free return policy</p>
+            </div>
           </div>
         </div>
       </div>
@@ -740,14 +765,7 @@ const Home = () => {
                   
                   {/* Add to Cart Button */}
                   <button 
-                    onClick={(e) => {
-                      e.preventDefault();
-                      addToCart({
-                        ...product, 
-                        image: product.image,
-                        id: product.id
-                      });
-                    }}
+                    onClick={(e) => handleAddToCart(product, e)}
                     className="w-full bg-orange-500 hover:bg-orange-600 text-white py-1.5 sm:py-2 px-2 sm:px-4 rounded-lg text-xs sm:text-sm font-medium transition-colors duration-200 flex items-center justify-center space-x-1"
                   >
                     <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -766,8 +784,6 @@ const Home = () => {
       {/* Premium Bestsellers */}
       <div className="py-8 bg-gray-50">
         <div className="container-responsive">
-         
-
           {/* Products Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 md:gap-6">
             {featuredProducts.map((product, index) => (
@@ -831,14 +847,7 @@ const Home = () => {
                   
                   {/* Add to Cart Button */}
                   <button 
-                    onClick={(e) => {
-                      e.preventDefault();
-                      addToCart({
-                        ...product, 
-                        image: product.image,
-                        id: product.id
-                      });
-                    }}
+                    onClick={(e) => handleAddToCart(product, e)}
                     className="w-full bg-purple-600 hover:bg-purple-700 text-white py-1.5 sm:py-2 px-2 sm:px-4 rounded-lg text-xs sm:text-sm font-medium transition-colors duration-200 flex items-center justify-center space-x-1"
                   >
                     <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -854,7 +863,6 @@ const Home = () => {
         </div>
       </div>
 
-    
       {/* Image Gallery Section */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-6 max-w-6xl mx-auto">
         {/* Left big image with text overlay */}
@@ -1061,6 +1069,46 @@ const Home = () => {
           </ul>
         </div>
       </div>
+
+      {/* Add CSS animations for toast */}
+      <style jsx="true">{`
+        @keyframes slideInRight {
+          from {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+        
+        @keyframes fadeOut {
+          from {
+            opacity: 1;
+          }
+          to {
+            opacity: 0;
+          }
+        }
+        
+        @keyframes progressBar {
+          from {
+            width: 100%;
+          }
+          to {
+            width: 0%;
+          }
+        }
+        
+        .animate-slide-in-right {
+          animation: slideInRight 0.3s ease-out;
+        }
+        
+        .animate-progress {
+          animation: progressBar 3s linear forwards;
+        }
+      `}</style>
     </div>
   );
 };

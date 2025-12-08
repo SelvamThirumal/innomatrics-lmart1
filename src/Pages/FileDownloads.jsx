@@ -1,257 +1,194 @@
-
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import "../../firebase";
+import { db } from "../../firebase";
 import {
   collection,
-  getDocs,
-  updateDoc,
+  query,
+  where,
+  onSnapshot,
   doc,
+  getDoc,
 } from "firebase/firestore";
-import { getStorage, ref, getDownloadURL } from "firebase/storage";
 
 const FileDownloads = () => {
-  const [files, setFiles] = useState([]);
+  const [fileDocs, setFileDocs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("all");
-  const [categories, setCategories] = useState([]);
 
-  const storage = getStorage();
+  const user = JSON.parse(localStorage.getItem("user") || "null");
 
+  // 🔥 FETCH FILE DOCUMENTS
   useEffect(() => {
-    fetchFiles();
-  }, []);
-
-  //  ---------- FETCH FILES FROM FIRESTORE ----------
-  const fetchFiles = async () => {
-    try {
-      const querySnapshot = await getDocs(collection(db, "files"));
-      const fetchedFiles = [];
-
-      for (let snap of querySnapshot.docs) {
-        const fileData = snap.data();
-
-        // Attach Firebase Storage download URL
-        const downloadURL = await getDownloadURL(
-          ref(storage, fileData.storagePath)
-        );
-
-        fetchedFiles.push({
-          id: snap.id,
-          ...fileData,
-          downloadURL: downloadURL,
-        });
-      }
-
-      setFiles(fetchedFiles);
-
-      // Extract unique categories
-      const uniqueCats = [
-        ...new Set(fetchedFiles.map((file) => file.category)),
-      ];
-      setCategories(uniqueCats);
-    } catch (err) {
-      console.error("Error loading files:", err);
-      setFiles([]);
-    } finally {
+    if (!user || !user.uid) {
+      console.log("No User UID found!");
       setLoading(false);
+      return;
     }
-  };
 
-  // ---------- HANDLE DOWNLOAD ----------
-  const handleDownload = async (file) => {
-    try {
-      // Trigger browser download
-      const a = document.createElement("a");
-      a.href = file.downloadURL;
-      a.download = file.originalName;
-      a.click();
+    const q = query(
+      collection(db, "uploadfile"),
+      where("customerUserId", "==", user.uid)
+    );
 
-      // Update download count in Firestore
-      const fileRef = doc(db, "files", file.id);
-      await updateDoc(fileRef, {
-        downloadCount: (file.downloadCount || 0) + 1,
-      });
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const docList = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        setFileDocs(docList);
+        setLoading(false);
+      },
+      (err) => {
+        console.error("Firestore Fetch Error:", err);
+        setLoading(false);
+      }
+    );
 
-      // Refresh UI count
-      fetchFiles();
-    } catch (error) {
-      console.error("Download error:", error);
-      alert("Error downloading file");
-    }
-  };
+    return () => unsubscribe();
+  }, [user?.uid]);
 
-  // ---------- FORMAT SIZE ----------
-  const formatFileSize = (bytes) => {
-    if (!bytes) return "0 Bytes";
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
-  };
+  // 🔥 FLATTEN FILE ARRAY
+  const allFiles = fileDocs.flatMap((doc) =>
+    (doc.files || []).map((file) => ({
+      ...file,
+      parentDocId: doc.id,
+    }))
+  );
 
-  // ---------- FILE ICON ----------
-  const getFileIcon = (fileType) => {
-    if (fileType.includes("image")) return "M4 16l4.586-4.586...";
-    if (fileType.includes("pdf")) return "M9 12h6m-6 4...";
-    return "M9 12h6m-6 4h6...";
-  };
-
-  // ---------- COLOR TAG ----------
-  const getFileTypeColor = (fileType) => {
-    if (fileType.includes("image"))
-      return "bg-green-100 text-green-800";
-    if (fileType.includes("pdf"))
-      return "bg-red-100 text-red-800";
-    if (fileType.includes("word"))
-      return "bg-blue-100 text-blue-800";
-    return "bg-gray-100 text-gray-800";
-  };
-
-  // ---------- FILTER ----------
-  const filteredFiles = files.filter((file) => {
-    const searchMatch =
-      file.originalName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      file.description?.toLowerCase().includes(searchTerm.toLowerCase());
-
-    const categoryMatch =
-      selectedCategory === "all" || file.category === selectedCategory;
-
-    return searchMatch && categoryMatch;
+  // 🔥 SEARCH FILTER
+  const filteredFiles = allFiles.filter((file) => {
+    const s = searchTerm.toLowerCase();
+    return (
+      (file.originalName || "").toLowerCase().includes(s) ||
+      (file.status || "").toLowerCase().includes(s)
+    );
   });
 
-  if (loading) {
+  // 🔥 FETCH downloadURL FROM FIRESTORE
+  const handleFetchDownload = async (parentDocId, fileId) => {
+    try {
+      const docRef = doc(db, "uploadfile", parentDocId);
+      const docSnap = await getDoc(docRef);
+
+      if (!docSnap.exists()) {
+        alert("Document not found!");
+        return;
+      }
+
+      const data = docSnap.data();
+      const file = (data.files || []).find((f) => f.fileId === fileId);
+
+      if (!file) {
+        alert("File not found in database!");
+        return;
+      }
+
+      if (!file.downloadURL) {
+        alert("Download link not available yet!");
+        return;
+      }
+
+      // 🔥 OPEN URL (starts download)
+      window.open(file.downloadURL, "_blank");
+    } catch (error) {
+      console.error("Error fetching download:", error);
+      alert("Error fetching download link.");
+    }
+  };
+
+  // 🔥 LOADING UI
+  if (loading)
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin h-12 w-12 border-b-2 border-purple-600 rounded-full"></div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin h-10 w-10 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+        <p className="ml-3 font-semibold">Loading your downloads...</p>
       </div>
     );
-  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+    <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+      <div className="max-w-5xl mx-auto">
+        <h1 className="text-3xl font-bold mb-6 text-gray-800">
+          Available Downloads
+        </h1>
 
-      {/* HEADER */}
-      <div className="bg-white shadow border-b">
-        <div className="max-w-7xl mx-auto py-8 text-center">
-          <h1 className="text-4xl font-bold">File Downloads</h1>
-          <p className="text-gray-600">
-            Browse and download files directly from Firebase.
-          </p>
-        </div>
-      </div>
+        <input
+          type="text"
+          placeholder="Search by filename or status..."
+          className="w-full p-4 border border-gray-200 rounded-xl mb-8 shadow-sm focus:ring-2 focus:ring-blue-500 outline-none"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
 
-      {/* MAIN */}
-      <div className="max-w-7xl mx-auto py-8 px-4">
-
-        {/* SEARCH + CATEGORY */}
-        <div className="bg-white p-6 rounded-lg shadow mb-8">
-          <div className="flex flex-col md:flex-row gap-4">
-
-            <input
-              type="text"
-              placeholder="Search files..."
-              className="flex-1 border rounded-lg p-3"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-
-            <select
-              className="md:w-64 border rounded-lg p-3"
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-            >
-              <option value="all">All Categories</option>
-              {categories.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-            </select>
-
-          </div>
-        </div>
-
-        {/* FILE GRID */}
         {filteredFiles.length === 0 ? (
-          <div className="text-center py-10">
-            <h3 className="text-lg font-medium text-gray-900">
-              No files found
-            </h3>
+          <div className="bg-white p-20 text-center rounded-2xl border-2 border-dashed border-gray-200">
+            <p className="text-gray-400 text-lg">
+              No correction downloads available right now.
+            </p>
+            <p className="text-sm text-gray-400 mt-2">
+              Check your document list in Admin or re-login.
+            </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredFiles.map((file) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {filteredFiles.map((file, index) => (
               <div
-                key={file.id}
-                className="bg-white border shadow p-6 rounded-lg"
+                key={`${file.fileId}-${index}`}
+                className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow"
               >
-                {/* FILE THUMBNAIL */}
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-12 h-12 bg-purple-600 text-white flex items-center justify-center rounded-lg">
-                    <svg
-                      className="w-6 h-6"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d={getFileIcon(file.fileType)}
-                      />
-                    </svg>
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <h3 className="font-bold text-gray-900 text-lg line-clamp-1">
+                      {file.originalName || "New File"}
+                    </h3>
+                    <p className="text-xs text-gray-400 mt-1 uppercase">
+                      Type: {file.fileType}
+                    </p>
                   </div>
 
                   <span
-                    className={`px-2 py-1 text-xs rounded-full ${getFileTypeColor(
-                      file.fileType
-                    )}`}
+                    className={`px-2 py-1 text-[10px] font-bold rounded ${
+                      file.fileType.includes("image")
+                        ? "bg-purple-100 text-purple-600"
+                        : "bg-blue-100 text-blue-600"
+                    }`}
                   >
-                    {file.fileType.split("/")[1]?.toUpperCase()}
+                    {file.fileType.split("/")[1].toUpperCase()}
                   </span>
                 </div>
 
-                {/* NAME */}
-                <h3 className="text-lg font-semibold mb-1">
-                  {file.originalName}
-                </h3>
+                <div className="mt-4 flex items-center justify-between">
+                  <div>
+                    <span className="block text-xs text-gray-400 mb-1">
+                      Status
+                    </span>
+                    <span
+                      className={`px-3 py-1 text-xs font-semibold rounded-full ${
+                        file.status === "pending_review"
+                          ? "bg-yellow-50 text-yellow-600"
+                          : "bg-green-50 text-green-600"
+                      }`}
+                    >
+                      {file.status.replace("_", " ")}
+                    </span>
+                  </div>
 
-                {/* DESCRIPTION */}
-                <p className="text-sm text-gray-600 mb-2">
-                  {file.description}
-                </p>
-
-                {/* META */}
-                <div className="flex justify-between text-sm text-gray-500 mb-4">
-                  <span>{formatFileSize(file.fileSize)}</span>
-                  <span>{file.downloadCount} downloads</span>
+                  {/* 🔥 DOWNLOAD BUTTON (fetches URL first) */}
+                  <button
+                    onClick={() =>
+                      handleFetchDownload(file.parentDocId, file.fileId)
+                    }
+                    className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold text-sm hover:bg-blue-700 transition"
+                  >
+                    Download
+                  </button>
                 </div>
-
-                {/* DOWNLOAD BUTTON */}
-                <button
-                  onClick={() => handleDownload(file)}
-                  className="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg"
-                >
-                  Download
-                </button>
               </div>
             ))}
           </div>
         )}
-
-        {/* BACK BTN */}
-        <div className="text-center mt-12">
-          <Link
-            to="/"
-            className="px-6 py-3 bg-gray-600 text-white rounded-lg shadow"
-          >
-            Back to Home
-          </Link>
-        </div>
-
       </div>
     </div>
   );
