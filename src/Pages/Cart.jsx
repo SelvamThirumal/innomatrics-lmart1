@@ -541,12 +541,7 @@ const Cart = () => {
                       : "Proceed to Checkout"}
                   </button>
 
-                  <button
-                    onClick={handleClearCart}
-                    className="w-full py-3 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700 transition-colors shadow-md"
-                  >
-                    Clear Entire Cart
-                  </button>
+                 
 
                   <button
                     onClick={() => navigate("/e-market")}

@@ -1,8 +1,10 @@
+// pages/LocalMarket.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getApps, getApp, initializeApp } from "firebase/app";
 import { getFirestore, collection, getDocs, query, where } from "firebase/firestore";
 import { useCart } from "../context/CartContext";
+import { useWishlist } from "../context/WishlistContext"; // Import wishlist hook
 
 // ---------------- FIREBASE INIT ----------------
 const firebaseConfig =
@@ -11,6 +13,23 @@ const appName = (typeof __app_id !== "undefined" && __app_id) ? `lm-${__app_id}`
 
 const app = getApps().find(a => a.name === appName) || initializeApp(firebaseConfig, appName);
 const db = getFirestore(app);
+
+// ---------------- TOAST NOTIFICATION ----------------
+const ToastNotification = ({ message, type = "success", onClose }) => {
+  if (!message) return null;
+  const bg = type === "success" ? "bg-green-600" : "bg-red-600";
+
+  return (
+    <div className="fixed top-5 right-5 z-50 animate-fade-in-down">
+      <div className={`${bg} text-white px-6 py-3 rounded-lg shadow-xl flex items-center gap-3`}>
+        <span>{message}</span>
+        <button onClick={onClose} className="text-white hover:text-gray-200 transition">
+          ✖
+        </button>
+      </div>
+    </div>
+  );
+};
 
 // ---------------- HELPERS ----------------
 const getMainImageUrl = (product) => {
@@ -71,10 +90,43 @@ const extractSubcategories = (products, mainCategory) => {
 };
 
 // ---------------- PRODUCT CARD COMPONENT ----------------
-const ProductCard = ({ product, addToCart, getQuantity, updateQuantity, navigate }) => {
+const ProductCard = ({ product, addToCart, getQuantity, updateQuantity, navigate, onWishlistToggle }) => {
   const qty = getQuantity(product.id);
   const { finalPrice, original, discount } = getPriceData(product);
   const rating = product.rating || 4.3;
+  
+  // Use Wishlist Context
+  const { toggleWishlist, isProductInWishlist } = useWishlist();
+  const inWishlist = isProductInWishlist(product.id);
+
+  const handleWishlistToggle = (e) => {
+    e.stopPropagation(); // Prevent product card click
+    toggleWishlist(product);
+    
+    // Show toast notification
+    if (onWishlistToggle) {
+      const message = inWishlist 
+        ? "❌ Removed from Liked Products" 
+        : "❤️ Added to Liked Products";
+      onWishlistToggle(message);
+    }
+  };
+
+  const handleAddToCart = (e) => {
+    e.stopPropagation();
+    addToCart({ 
+      id: product.id, 
+      name: product.name,
+      price: finalPrice,
+      image: product.image,
+      ...product, 
+      quantity: 1 
+    });
+    
+    if (onWishlistToggle) {
+      onWishlistToggle("🛒 Added to Cart");
+    }
+  };
 
   return (
     <div
@@ -84,6 +136,29 @@ const ProductCard = ({ product, addToCart, getQuantity, updateQuantity, navigate
     >
       {/* Image */}
       <div className="relative h-48">
+        {/* Heart Button - Top Right */}
+        <button
+          onClick={handleWishlistToggle}
+          className={`absolute top-3 right-3 p-2 bg-white rounded-full shadow-md hover:scale-110 transition z-10 ${
+            inWishlist ? "text-red-600" : "text-gray-400"
+          }`}
+          title={inWishlist ? "Remove from Wishlist" : "Add to Wishlist"}
+        >
+          <svg
+            className="w-5 h-5"
+            fill={inWishlist ? "red" : "none"}
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-.318-.318a4.5 4.5 0 00-6.364 0z"
+            />
+          </svg>
+        </button>
+
         <img
           src={product.image}
           alt={product.name}
@@ -92,7 +167,7 @@ const ProductCard = ({ product, addToCart, getQuantity, updateQuantity, navigate
         />
 
         {discount > 0 && (
-          <span className="absolute top-3 right-3 bg-red-600 text-white text-xs px-2 py-1 rounded">
+          <span className="absolute top-3 left-3 bg-red-600 text-white text-xs px-2 py-1 rounded">
             -{discount}%
           </span>
         )}
@@ -133,38 +208,36 @@ const ProductCard = ({ product, addToCart, getQuantity, updateQuantity, navigate
           )}
         </div>
 
-        {/* Add To Cart */}
+        {/* Add To Cart / View Cart Section */}
         {qty > 0 ? (
-          <div className="flex items-center justify-between gap-2">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              
+               
+              
+            </div>
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                updateQuantity(product.id, qty - 1);
+                navigate("/cart");
               }}
-              className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center"
+              className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-medium transition flex items-center justify-center gap-2"
             >
-              -
-            </button>
-            <span className="flex-1 text-center font-medium">{qty} in Cart</span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                updateQuantity(product.id, qty + 1);
-              }}
-              className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center"
-            >
-              +
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+              View Cart
             </button>
           </div>
         ) : (
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              addToCart({ id: product.id, ...product, quantity: 1 });
-            }}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium"
+            onClick={handleAddToCart}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium transition flex items-center justify-center gap-2"
           >
-            + Add to Cart
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+            Add to Cart
           </button>
         )}
       </div>
@@ -176,6 +249,7 @@ const ProductCard = ({ product, addToCart, getQuantity, updateQuantity, navigate
 const LocalMarket = () => {
   const navigate = useNavigate();
   const { items = [], addToCart, updateQuantity } = useCart();
+  const [toastMessage, setToastMessage] = useState("");
 
   const [products, setProducts] = useState([]);
   const [mainCategories, setMainCategories] = useState(["All Products"]);
@@ -184,7 +258,15 @@ const LocalMarket = () => {
   const [selectedSubCategory, setSelectedSubCategory] = useState("All");
   const [priceRange, setPriceRange] = useState([0, 5000]);
   const [loading, setLoading] = useState(true);
-  const [showFilters, setShowFilters] = useState(true);
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Auto hide toast
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(""), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   const getQuantity = (id) => {
     const item = items.find(i => i.id === id);
@@ -229,6 +311,7 @@ const LocalMarket = () => {
         setPriceRange([0, Math.min(Math.ceil(maxPrice / 1000) * 1000, 100000)]);
       } catch (err) {
         console.error("Local Market Fetch Error:", err);
+        setToastMessage("Error loading products");
       } finally {
         setLoading(false);
       }
@@ -281,6 +364,27 @@ const LocalMarket = () => {
   // ---------------- RENDER ----------------
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Toast Notification */}
+      <ToastNotification 
+        message={toastMessage} 
+        onClose={() => setToastMessage("")} 
+      />
+      
+      {/* Mobile Filter Button */}
+      <div className="lg:hidden bg-white border-b shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="w-full flex items-center justify-center gap-2 py-2 bg-blue-600 text-white rounded-lg font-medium transition hover:bg-blue-700"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+            {showFilters ? 'Hide Filters' : 'Show Filters'}
+          </button>
+        </div>
+      </div>
+
       {/* Category Navbar */}
       <div className="bg-white border-b shadow-sm">
         <div className="max-w-7xl mx-auto px-4">
@@ -289,7 +393,7 @@ const LocalMarket = () => {
               <button
                 key={category}
                 onClick={() => setSelectedMainCategory(category)}
-                className={`flex-shrink-0 px-4 py-2 rounded-lg transition ${
+                className={`flex-shrink-0 px-4 py-2 rounded-lg transition whitespace-nowrap ${
                   selectedMainCategory === category
                     ? "bg-blue-600 text-white"
                     : "bg-gray-100 text-gray-700 hover:bg-gray-200"
@@ -303,99 +407,98 @@ const LocalMarket = () => {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-6">
-        <div className="flex gap-6">
-          {/* Sidebar Filters */}
-          {showFilters && (
-            <div className="w-64 bg-white p-4 rounded-lg shadow-sm border sticky top-20">
-              <h2 className="font-semibold mb-3">Filters</h2>
+        <div className="flex flex-col lg:flex-row gap-6">
+          {/* Sidebar Filters - Responsive */}
+          <div className={`${showFilters ? 'block' : 'hidden'} lg:block w-full lg:w-64 bg-white p-4 rounded-lg shadow-sm border lg:sticky lg:top-20 self-start`}>
+            <h2 className="font-semibold mb-3">Filters</h2>
 
-              {/* Subcategories */}
-              <h3 className="text-sm font-medium mb-2">Subcategories</h3>
-              <div className="space-y-2 mb-6">
-                {subCategories.map((subCat) => (
-                  <label key={subCat} className="flex items-center space-x-2">
-                    <input
-                      type="radio"
-                      name="subcategory"
-                      checked={selectedSubCategory === subCat}
-                      onChange={() => setSelectedSubCategory(subCat)}
-                    />
-                    <span className="text-sm">{subCat}</span>
-                  </label>
-                ))}
+            {/* Subcategories */}
+            <h3 className="text-sm font-medium mb-2">Subcategories</h3>
+            <div className="space-y-2 mb-6">
+              {subCategories.map((subCat) => (
+                <label key={subCat} className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="subcategory"
+                    checked={selectedSubCategory === subCat}
+                    onChange={() => setSelectedSubCategory(subCat)}
+                    className="cursor-pointer"
+                  />
+                  <span className="text-sm">{subCat}</span>
+                </label>
+              ))}
+            </div>
+
+            <hr className="my-4" />
+
+            {/* Price Range - SINGLE SLIDER WITH MIN/MAX DISPLAY */}
+            <div className="mb-6">
+              <h3 className="text-sm font-medium mb-4">Price Range</h3>
+              
+              {/* Min/Max Price Display */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="text-center">
+                  <div className="text-xs text-gray-500 mb-1">Min</div>
+                  <div className="text-sm font-medium">₹{priceRange[0]}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs text-gray-500 mb-1">Max</div>
+                  <div className="text-sm font-medium">₹{priceRange[1]}</div>
+                </div>
               </div>
 
-              <hr className="my-4" />
+              {/* Single Range Slider Container */}
+              <div className="relative pt-1 mb-2">
+                {/* Min Price Slider */}
+                <input
+                  type="range"
+                  min="0"
+                  max="100000"
+                  value={priceRange[0]}
+                  onChange={(e) => handlePriceChange(0, e.target.value)}
+                  className="absolute w-full h-2 bg-transparent appearance-none pointer-events-auto z-10"
+                  style={{ WebkitAppearance: 'none' }}
+                />
+                {/* Max Price Slider */}
+                <input
+                  type="range"
+                  min="0"
+                  max="100000"
+                  value={priceRange[1]}
+                  onChange={(e) => handlePriceChange(1, e.target.value)}
+                  className="absolute w-full h-2 bg-transparent appearance-none pointer-events-auto z-20"
+                  style={{ WebkitAppearance: 'none' }}
+                />
+                {/* Track Background */}
+                <div className="h-2 bg-gray-200 rounded-full"></div>
+                {/* Active Range */}
+                <div 
+                  className="absolute top-0 h-2 bg-blue-500 rounded-full"
+                  style={{
+                    left: `${(priceRange[0] / 100000) * 100}%`,
+                    width: `${((priceRange[1] - priceRange[0]) / 100000) * 100}%`
+                  }}
+                ></div>
+              </div>
 
-              {/* Price Range - SINGLE SLIDER WITH MIN/MAX DISPLAY */}
-              <div className="mb-6">
-                <h3 className="text-sm font-medium mb-4">Price Range</h3>
-                
-                {/* Min/Max Price Display */}
-                <div className="flex items-center justify-between mb-4">
-                  <div className="text-center">
-                    <div className="text-xs text-gray-500 mb-1">Min</div>
-                    <div className="text-sm font-medium">₹{priceRange[0]}</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-xs text-gray-500 mb-1">Max</div>
-                    <div className="text-sm font-medium">₹{priceRange[1]}</div>
-                  </div>
-                </div>
-
-                {/* Single Range Slider Container */}
-                <div className="relative pt-1 mb-2">
-                  {/* Min Price Slider */}
-                  <input
-                    type="range"
-                    min="0"
-                    max="100000"
-                    value={priceRange[0]}
-                    onChange={(e) => handlePriceChange(0, e.target.value)}
-                    className="absolute w-full h-2 bg-transparent appearance-none pointer-events-auto z-10"
-                    style={{ WebkitAppearance: 'none' }}
-                  />
-                  {/* Max Price Slider */}
-                  <input
-                    type="range"
-                    min="0"
-                    max="100000"
-                    value={priceRange[1]}
-                    onChange={(e) => handlePriceChange(1, e.target.value)}
-                    className="absolute w-full h-2 bg-transparent appearance-none pointer-events-auto z-20"
-                    style={{ WebkitAppearance: 'none' }}
-                  />
-                  {/* Track Background */}
-                  <div className="h-2 bg-gray-200 rounded-full"></div>
-                  {/* Active Range */}
-                  <div 
-                    className="absolute top-0 h-2 bg-blue-500 rounded-full"
-                    style={{
-                      left: `${(priceRange[0] / 100000) * 100}%`,
-                      width: `${((priceRange[1] - priceRange[0]) / 100000) * 100}%`
-                    }}
-                  ></div>
-                </div>
-
-                {/* Price Labels */}
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>₹0</span>
-                  <span>₹1,00,000</span>
-                </div>
+              {/* Price Labels */}
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>₹0</span>
+                <span>₹1,00,000</span>
               </div>
             </div>
-          )}
+          </div>
 
           {/* Products Area */}
           <div className="flex-1">
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <h2 className="text-xl font-semibold">
                 {selectedMainCategory === "All Products"
                   ? "All Products"
                   : selectedMainCategory}
                 {selectedSubCategory !== "All" && ` - ${selectedSubCategory}`}
               </h2>
-              <div className="text-sm text-gray-600">
+              <div className="text-sm text-gray-600 bg-gray-100 px-3 py-1 rounded-full">
                 {filtered.length} products
               </div>
             </div>
@@ -411,13 +514,13 @@ const LocalMarket = () => {
             {!loading && filtered.length === 0 && (
               <div className="bg-white border rounded-lg shadow-sm text-center py-10 text-gray-500">
                 No products found
-                <p className="text-gray-400 text-sm">Try adjusting your filters.</p>
+                <p className="text-gray-400 text-sm mt-2">Try adjusting your filters.</p>
               </div>
             )}
 
-            {/* Products Grid */}
+            {/* Products Grid - Responsive */}
             {!loading && filtered.length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
                 {filtered.map((p) => (
                   <ProductCard
                     key={p.id}
@@ -426,6 +529,7 @@ const LocalMarket = () => {
                     updateQuantity={updateQuantity}
                     getQuantity={getQuantity}
                     navigate={navigate}
+                    onWishlistToggle={(msg) => setToastMessage(msg)}
                   />
                 ))}
               </div>
@@ -433,6 +537,9 @@ const LocalMarket = () => {
           </div>
         </div>
       </div>
+      
+      {/* FIXED CHECKOUT BUTTON */}
+      
     </div>
   );
 };

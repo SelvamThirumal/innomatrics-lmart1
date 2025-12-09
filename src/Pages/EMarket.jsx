@@ -1,13 +1,10 @@
 // src/Pages/EMarket.jsx
 import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-
-// Import the same Firebase initialization as LocalMarket
 import { getApps, getApp, initializeApp } from "firebase/app";
 import { getFirestore, collection, getDocs } from "firebase/firestore";
-
-// Cart Context
 import { useCart } from "../context/CartContext";
+import { useWishlist } from "../context/WishlistContext";
 
 // ---------------- FIREBASE INIT (SAME AS LOCALMARKET) ----------------
 const firebaseConfig =
@@ -83,11 +80,49 @@ const extractSubcategories = (products, mainCategory) => {
   return [...set];
 };
 
+// ---------------- TOAST NOTIFICATION ----------------
+const ToastNotification = ({ message, type = "success", onClose }) => {
+  if (!message) return null;
+
+  const bgColor = type === "success" ? "bg-green-600" : "bg-red-600";
+
+  return (
+    <div className="fixed top-5 right-5 z-50 animate-fade-in-down">
+      <div className={`${bgColor} text-white px-6 py-3 rounded-lg shadow-xl flex items-center gap-3`}>
+        <span>{message}</span>
+        <button
+          onClick={onClose}
+          className="text-white hover:text-gray-200 transition"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // ---------------- PRODUCT CARD COMPONENT ----------------
-const ProductCard = ({ product, addToCart, getQuantity, updateQuantity, navigate }) => {
+const ProductCard = ({ product, addToCart, getQuantity, updateQuantity, navigate, onToggleWishlist }) => {
   const qty = getQuantity(product.id);
   const { finalPrice, original, discount } = getPriceData(product);
   const rating = product.rating || 4.3;
+  
+  // ❤️ Use Wishlist Context
+  const { toggleWishlist, isProductInWishlist } = useWishlist();
+  const inWishlist = isProductInWishlist(product.id);
+
+  const handleWishlistToggle = (e) => {
+    e.stopPropagation();
+    toggleWishlist(product);
+    if (onToggleWishlist) {
+      const message = inWishlist 
+        ? "❌ Removed from Liked Products" 
+        : "❤️ Added to Liked Products";
+      onToggleWishlist(message);
+    }
+  };
 
   return (
     <div
@@ -104,14 +139,37 @@ const ProductCard = ({ product, addToCart, getQuantity, updateQuantity, navigate
           onError={(e) => (e.target.src = PLACEHOLDER_IMAGE)}
         />
 
+        {/* ❤️ UPDATED WISHLIST HEART BUTTON */}
+        <button
+          onClick={handleWishlistToggle}
+          className={`absolute top-3 right-3 p-2 bg-white rounded-full shadow-md hover:scale-110 transition 
+            ${inWishlist ? "text-red-600" : "text-gray-400"}`}
+          title={inWishlist ? "Remove from Wishlist" : "Add to Wishlist"}
+        >
+          <svg
+            className="w-5 h-5"
+            fill={inWishlist ? "red" : "none"}
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-.318-.318a4.5 4.5 0 00-6.364 0z"
+            />
+          </svg>
+        </button>
+
         {discount > 0 && (
-          <span className="absolute top-3 right-3 bg-red-600 text-white text-xs px-2 py-1 rounded">
+          <span className="absolute top-3 left-3 bg-red-600 text-white text-xs px-2 py-1 rounded">
             -{discount}%
           </span>
         )}
 
         {product.isNew && (
-          <span className="absolute top-3 left-3 bg-blue-600 text-white text-xs px-2 py-1 rounded">
+          <span className="absolute bottom-3 left-3 bg-blue-600 text-white text-xs px-2 py-1 rounded">
             New
           </span>
         )}
@@ -152,27 +210,24 @@ const ProductCard = ({ product, addToCart, getQuantity, updateQuantity, navigate
           )}
         </div>
 
-        {/* Add To Cart */}
+        {/* Add To Cart / View Cart Section */}
         {qty > 0 ? (
-          <div className="flex items-center justify-between gap-2">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2 mb-2">
+             
+              
+            </div>
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                updateQuantity(product.id, qty - 1);
+                navigate("/cart");
               }}
-              className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center"
+              className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-medium transition flex items-center justify-center gap-2"
             >
-              -
-            </button>
-            <span className="flex-1 text-center font-medium">{qty} in Cart</span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                updateQuantity(product.id, qty + 1);
-              }}
-              className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center"
-            >
-              +
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+              View Cart
             </button>
           </div>
         ) : (
@@ -181,9 +236,12 @@ const ProductCard = ({ product, addToCart, getQuantity, updateQuantity, navigate
               e.stopPropagation();
               addToCart({ id: product.id, ...product, quantity: 1 });
             }}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium transition flex items-center justify-center gap-2"
           >
-            + Add to Cart
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+            Add to Cart
           </button>
         )}
       </div>
@@ -207,6 +265,7 @@ const EMarket = () => {
   const [priceRange, setPriceRange] = useState([0, 5000]);
   const [loading, setLoading] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
 
   // 👇 Extract Search Query from URL
   const searchQuery = useMemo(() => {
@@ -219,7 +278,7 @@ const EMarket = () => {
     return item ? item.quantity : 0;
   };
 
-  // ---------------- FETCH PRODUCTS (SAME FORMAT AS LOCALMARKET) ----------------
+  // ---------------- FETCH PRODUCTS ----------------
   useEffect(() => {
     const load = async () => {
       setLoading(true);
@@ -256,6 +315,8 @@ const EMarket = () => {
         setPriceRange([0, Math.min(Math.ceil(maxPrice / 1000) * 1000, MAX_SLIDER)]);
       } catch (err) {
         console.error("E-Market Fetch Error:", err);
+        setToastMessage("Error loading products");
+        setTimeout(() => setToastMessage(""), 3000);
       } finally {
         setLoading(false);
       }
@@ -273,6 +334,14 @@ const EMarket = () => {
       setSelectedSubCategory("All");
     }
   }, [selectedMainCategory, products, searchQuery]);
+
+  // Auto-hide toast after 3 seconds
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(""), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   // ---------------- FILTERING ----------------
   const filtered = useMemo(() => {
@@ -327,11 +396,36 @@ const EMarket = () => {
     setPriceRange(copy);
   };
 
+  const handleWishlistNotification = (message) => {
+    setToastMessage(message);
+  };
+
   // ---------------- RENDER ----------------
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Toast Notification */}
+      <ToastNotification 
+        message={toastMessage} 
+        onClose={() => setToastMessage("")} 
+      />
+
+      {/* Mobile Filter Button */}
+      <div className="lg:hidden bg-white border-b shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="w-full flex items-center justify-center gap-2 py-2 bg-blue-600 text-white rounded-lg font-medium transition hover:bg-blue-700"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+            {showFilters ? 'Hide Filters' : 'Show Filters'}
+          </button>
+        </div>
+      </div>
+
       {/* Category Navbar */}
-      <div className="bg-white border-b shadow-sm">
+      <div className="bg-white border-b shadow-sm hidden lg:block">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex overflow-x-auto py-3 space-x-6">
             {/* 👇 Hide category buttons if a search is active */}
@@ -360,21 +454,22 @@ const EMarket = () => {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-6">
-        <div className="flex gap-6">
-          {/* Sidebar Filters */}
-          <div className="w-64 bg-white p-4 rounded-lg shadow-sm border sticky top-20">
+        <div className="flex flex-col lg:flex-row gap-6">
+          {/* Sidebar Filters - Responsive */}
+          <div className={`${showFilters ? 'block' : 'hidden'} lg:block w-full lg:w-64 bg-white p-4 rounded-lg shadow-sm border lg:sticky lg:top-20 self-start`}>
             <h2 className="font-semibold mb-3">Filters</h2>
 
             {/* Subcategories */}
             <h3 className="text-sm font-medium mb-2">Subcategories</h3>
             <div className="space-y-2 mb-6">
               {subCategories.map((subCat) => (
-                <label key={subCat} className="flex items-center space-x-2">
+                <label key={subCat} className="flex items-center space-x-2 cursor-pointer">
                   <input
                     type="radio"
                     name="subcategory"
                     checked={selectedSubCategory === subCat}
                     onChange={() => setSelectedSubCategory(subCat)}
+                    className="cursor-pointer"
                   />
                   <span className="text-sm">{subCat}</span>
                 </label>
@@ -443,7 +538,7 @@ const EMarket = () => {
 
           {/* Products Area */}
           <div className="flex-1">
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <h2 className="text-xl font-semibold">
                 {/* 👇 Update Title based on search query */}
                 {searchQuery
@@ -453,7 +548,7 @@ const EMarket = () => {
                   : selectedMainCategory}
                 {!searchQuery && selectedSubCategory !== "All" && ` - ${selectedSubCategory}`}
               </h2>
-              <div className="text-sm text-gray-600">
+              <div className="text-sm text-gray-600 bg-gray-100 px-3 py-1 rounded-full">
                 {filtered.length} products
               </div>
             </div>
@@ -471,13 +566,13 @@ const EMarket = () => {
                 {searchQuery
                   ? `No products found matching "${searchQuery}"`
                   : "No products found"}
-                <p className="text-gray-400 text-sm">Try adjusting your filters.</p>
+                <p className="text-gray-400 text-sm mt-2">Try adjusting your filters.</p>
               </div>
             )}
 
-            {/* Products Grid */}
+            {/* Products Grid - Responsive */}
             {!loading && filtered.length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
                 {filtered.map((p) => (
                   <ProductCard
                     key={p.id}
@@ -486,6 +581,7 @@ const EMarket = () => {
                     updateQuantity={updateQuantity}
                     getQuantity={getQuantity}
                     navigate={navigate}
+                    onToggleWishlist={handleWishlistNotification}
                   />
                 ))}
               </div>
@@ -493,6 +589,9 @@ const EMarket = () => {
           </div>
         </div>
       </div>
+      
+      {/* FIXED CHECKOUT BUTTON */}
+       
     </div>
   );
 };

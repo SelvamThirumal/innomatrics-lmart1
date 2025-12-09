@@ -3,7 +3,22 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import logo from "../assets/newadd.png";
 import { db } from "../../firebase";
-import { collection, getDocs, addDoc, doc, getDoc, updateDoc, setDoc } from "firebase/firestore";
+import { 
+  collection, 
+  getDocs, 
+  addDoc, 
+  doc, 
+  getDoc, 
+  updateDoc, 
+  setDoc 
+} from "firebase/firestore";
+import { 
+  getStorage, 
+  ref, 
+  uploadBytesResumable, 
+  getDownloadURL,
+  deleteObject 
+} from "firebase/storage";
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -12,6 +27,8 @@ const Navbar = () => {
   const [selectedTotal, setSelectedTotal] = useState(0);
   const [selectedCount, setSelectedCount] = useState(0);
   const [user, setUser] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState({}); // Track upload progress
+  const [isUploading, setIsUploading] = useState(false); // Track overall upload status
   
   const navigate = useNavigate();
   const location = useLocation();
@@ -35,6 +52,9 @@ const Navbar = () => {
   const [allProducts, setAllProducts] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Firebase Storage instance
+  const storage = getStorage();
 
   // Fetch products for search
   useEffect(() => {
@@ -219,6 +239,12 @@ const Navbar = () => {
     handleSearch(query);
   };
 
+  const handleIconSearch = () => {
+    if (query.trim()) {
+      handleSearch(query);
+    }
+  };
+
   const handleSelectSuggestion = (product) => {
     navigate(`/product/${product.id}`, { 
       state: { product } 
@@ -229,207 +255,287 @@ const Navbar = () => {
   };
   // --- END SEARCH HANDLER ---
 
-  // --- FILE UPLOAD HANDLER - SAVES TO USER DOCUMENT IN FIREBASE ---
-  // --- SIMPLE VERSION: Save file info even without URL ---
-// --- FILE UPLOAD HANDLER - CREATES uploadfiles IN orders SUBCOLLECTION ---
-// --- FILE UPLOAD HANDLER - CREATES uploadfile COLLECTION WITH CUSTOMER DETAILS ---
-const handleFileUpload = async (e) => {
-  const files = Array.from(e.target.files);
-  if (files.length === 0) return;
+  // --- FILE UPLOAD HANDLER ---
+  const handleFileUpload = async (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
 
-  if (!user) {
-    alert("Please log in to upload files.");
-    return;
-  }
+    if (!user) {
+      alert("Please log in to upload files.");
+      return;
+    }
 
-  // Get user details
-  const userId = user.uid || user.id || user._id || user.customerId;
-  const userName = user.name || "Unknown User";
-  const userEmail = user.email || "unknown@example.com";
-  const userPhone = user.contactNo || user.phone || "Not provided";
-  const customerId = user.customerId || userId;
+    // Get user details
+    const userId = user.uid || user.id || user._id || user.customerId;
+    const userName = user.name || "Unknown User";
+    const userEmail = user.email || "unknown@example.com";
+    const userPhone = user.contactNo || user.phone || "Not provided";
+    const customerId = user.customerId || userId;
 
-  if (!userId) {
-    console.log("User object for debugging:", user);
-    alert("User ID not found. Please log in again.");
-    return;
-  }
+    if (!userId) {
+      console.log("User object for debugging:", user);
+      alert("User ID not found. Please log in again.");
+      return;
+    }
 
-  console.log("Uploading files for customer:", userName, "ID:", customerId);
-
-  try {
-    // 1. Create uploaded files data
-    const uploadedFilesData = files.map((file, index) => {
-      const timestamp = Date.now();
-      return {
-        fileId: `file_${timestamp}_${index}_${Math.random().toString(36).substr(2, 5)}`,
-        originalName: file.name,
-        fileName: `${timestamp}_${file.name}`,
-        fileType: file.type,
-        fileSize: file.size,
-        uploadedAt: new Date(),
-        status: "pending",
-        lastUpdated: new Date(),
-        localPreview: URL.createObjectURL(file) // For browser preview
-      };
-    });
-
-    // 2. Create a new document in uploadfile collection
-    const uploadfileCollection = collection(db, "uploadfile");
-    const newUploadRef = doc(uploadfileCollection); // Auto-generate ID
+    console.log("Uploading files for customer:", userName, "ID:", customerId);
     
-    const uploadData = {
-      // Customer Information
-      customerId: customerId,
-      customerName: userName,
-      customerEmail: userEmail,
-      customerPhone: userPhone,
-      customerUserId: userId,
-      
-      // Upload Information
-      uploadId: newUploadRef.id,
-      uploadDate: new Date(),
-      uploadTimestamp: Date.now(),
-      
-      // Files Data
-      files: uploadedFilesData,
-      totalFiles: files.length,
-      fileTypes: [...new Set(files.map(f => f.type))], // Unique file types
-      totalSize: files.reduce((sum, file) => sum + file.size, 0),
-      
-      // Status
-      status: "pending_review",
-      isProcessed: false,
-      processedBy: null,
-      processedAt: null,
-      
-      // Timestamps
-      createdAt: new Date(),
-      createdBy: userId,
-      updatedAt: new Date()
-    };
+    // Start uploading
+    setIsUploading(true);
+    setUploadProgress({});
 
-    // 3. Save to uploadfile collection
-    await setDoc(newUploadRef, uploadData);
-    
-    console.log("✅ Created new document in uploadfile collection with ID:", newUploadRef.id);
-    alert(`✅ Successfully uploaded ${files.length} file(s)! Upload ID: ${newUploadRef.id}`);
-
-    // 4. Optional: Upload to server
     try {
-      const formData = new FormData();
-      files.forEach((file) => formData.append("files", file));
+      // 1. Create a new document in uploadfile collection first
+      const uploadfileCollection = collection(db, "uploadfile");
+      const newUploadRef = doc(uploadfileCollection); // Auto-generate ID
+      const uploadId = newUploadRef.id;
       
-      const token = localStorage.getItem("token");
-      const headers = {};
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
+      // 2. Initialize upload data
+      const uploadData = {
+        // Customer Information
+        customerId: customerId,
+        customerName: userName,
+        customerEmail: userEmail,
+        customerPhone: userPhone,
+        customerUserId: userId,
+        
+        // Upload Information
+        uploadId: uploadId,
+        uploadDate: new Date(),
+        uploadTimestamp: Date.now(),
+        
+        // Files Data - will be updated after upload
+        files: [],
+        totalFiles: files.length,
+        fileTypes: [...new Set(files.map(f => f.type))], // Unique file types
+        totalSize: files.reduce((sum, file) => sum + file.size, 0),
+        
+        // Status
+        status: "uploading",
+        isProcessed: false,
+        processedBy: null,
+        processedAt: null,
+        
+        // Timestamps
+        createdAt: new Date(),
+        createdBy: userId,
+        updatedAt: new Date()
+      };
+
+      // 3. Save initial document to Firestore
+      await setDoc(newUploadRef, uploadData);
+      console.log("✅ Created upload document with ID:", uploadId);
+
+      // 4. Upload each file to Firebase Storage
+      const uploadedFilesData = [];
+      
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const timestamp = Date.now();
+        const uniqueFileName = `${timestamp}_${Math.random().toString(36).substr(2, 9)}_${file.name}`;
+        const storagePath = `uploadfile/${uploadId}/${uniqueFileName}`;
+        
+        // Create a reference to the file in Firebase Storage
+        const storageRef = ref(storage, storagePath);
+        
+        // Create upload task
+        const uploadTask = uploadBytesResumable(storageRef, file);
+        
+        // Create file data
+        const fileData = {
+          fileId: `file_${timestamp}_${i}_${Math.random().toString(36).substr(2, 5)}`,
+          originalName: file.name,
+          fileName: uniqueFileName,
+          fileType: file.type,
+          fileSize: file.size,
+          storagePath: storagePath,
+          status: "uploading",
+          uploadedAt: new Date(),
+          lastUpdated: new Date()
+        };
+
+        // Upload file to Firebase Storage
+        await new Promise((resolve, reject) => {
+          uploadTask.on(
+            'state_changed',
+            (snapshot) => {
+              // Update progress
+              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+              setUploadProgress(prev => ({
+                ...prev,
+                [file.name]: progress
+              }));
+              console.log(`Uploading ${file.name}: ${progress}%`);
+            },
+            (error) => {
+              console.error(`Error uploading ${file.name}:`, error);
+              fileData.status = "failed";
+              fileData.error = error.message;
+              reject(error);
+            },
+            async () => {
+              // Upload completed successfully, get download URL
+              try {
+                const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                fileData.downloadURL = downloadURL;
+                fileData.status = "uploaded";
+                fileData.lastUpdated = new Date();
+                console.log(`✅ File uploaded: ${file.name}`, downloadURL);
+                
+                // Add to uploaded files array
+                uploadedFilesData.push(fileData);
+                resolve();
+              } catch (urlError) {
+                console.error(`Error getting download URL for ${file.name}:`, urlError);
+                fileData.status = "failed";
+                fileData.error = "Failed to get download URL";
+                reject(urlError);
+              }
+            }
+          );
+        });
       }
-      
-      const API_BASE_URL = import.meta.env.VITE_API_URL?.replace("/api", "") || "http://localhost:5000";
-      
-      const response = await fetch(`${API_BASE_URL}/api/files/upload-multiple-public`, {
-        method: "POST",
-        headers: headers,
-        body: formData,
+
+      // 5. Update Firestore document with uploaded files data
+      await updateDoc(newUploadRef, {
+        files: uploadedFilesData,
+        status: "uploaded",
+        updatedAt: new Date(),
+        serverUploaded: true,
+        serverUploadedAt: new Date()
       });
 
-      if (response.ok) {
-        const result = await response.json();
-        console.log("Server upload successful:", result);
-        
-        // Update document with server URLs
-        if (result.files && Array.isArray(result.files)) {
-          const updatedFiles = uploadedFilesData.map((file, index) => {
-            if (result.files[index]) {
-              const serverFile = result.files[index];
-              const fileUrl = serverFile.url || serverFile.secure_url || 
-                            serverFile.location || serverFile.path ||
-                            serverFile.fileUrl || serverFile.downloadUrl;
-              return {
-                ...file,
-                fileUrl: fileUrl,
-                serverFileName: serverFile.originalname || serverFile.name,
-                serverFileId: serverFile.id || serverFile.public_id,
-                status: "uploaded_to_server",
-                serverUploadedAt: new Date(),
-                lastUpdated: new Date()
-              };
-            }
-            return file;
-          });
-          
-          await updateDoc(newUploadRef, {
-            files: updatedFiles,
-            serverUploaded: true,
-            serverUploadedAt: new Date(),
-            status: "uploaded",
-            updatedAt: new Date(),
-            serverResponse: result // Save full server response
-          });
-          
-          console.log("✅ Updated with server URLs");
-        }
-      }
-    } catch (serverError) {
-      console.log("Server upload failed:", serverError);
-      // Still success because file info is saved to Firebase
-    }
-
-    // 5. Also update user's orders/uploadfiles for backward compatibility
-    try {
-      const userUploadRef = doc(db, "users", userId, "orders", "uploadfiles");
-      const userUploadDoc = await getDoc(userUploadRef);
+      console.log("✅ All files uploaded successfully!");
+      alert(`✅ Successfully uploaded ${files.length} file(s)! Upload ID: ${uploadId}`);
       
-      if (userUploadDoc.exists()) {
-        const existingData = userUploadDoc.data();
-        const existingFiles = existingData.files || [];
-        const allFiles = [...existingFiles, ...uploadedFilesData];
-        
-        await updateDoc(userUploadRef, {
-          files: allFiles,
-          totalFiles: allFiles.length,
-          lastUpdated: new Date()
-        });
-      } else {
-        await setDoc(userUploadRef, {
-          files: uploadedFilesData,
-          totalFiles: uploadedFilesData.length,
-          createdAt: new Date(),
-          userId: userId,
-          userName: userName,
-          userEmail: userEmail
-        });
-      }
-      console.log("✅ Also updated user's orders/uploadfiles");
-    } catch (userUpdateError) {
-      console.log("User update skipped:", userUpdateError);
-    }
+      // Reset states
+      setUploadProgress({});
+      setIsUploading(false);
 
-  } catch (error) {
-    console.error("Error uploading files:", error);
-    alert(`❌ Error: ${error.message}`);
-  }
-  
-  // Reset file input
-  e.target.value = "";
-};
-// --- END FILE UPLOAD HANDLER ---
-// --- END FILE UPLOAD HANDLER ---
+      // 6. Also update user's orders/uploadfiles for backward compatibility
+      try {
+        const userUploadRef = doc(db, "users", userId, "orders", "uploadfiles");
+        const userUploadDoc = await getDoc(userUploadRef);
+        
+        if (userUploadDoc.exists()) {
+          const existingData = userUploadDoc.data();
+          const existingFiles = existingData.files || [];
+          const allFiles = [...existingFiles, ...uploadedFilesData];
+          
+          await updateDoc(userUploadRef, {
+            files: allFiles,
+            totalFiles: allFiles.length,
+            lastUpdated: new Date()
+          });
+        } else {
+          await setDoc(userUploadRef, {
+            files: uploadedFilesData,
+            totalFiles: uploadedFilesData.length,
+            createdAt: new Date(),
+            userId: userId,
+            userName: userName,
+            userEmail: userEmail
+          });
+        }
+        console.log("✅ Also updated user's orders/uploadfiles");
+      } catch (userUpdateError) {
+        console.log("User update skipped:", userUpdateError);
+      }
+
+    } catch (error) {
+      console.error("Error in file upload process:", error);
+      alert(`❌ Error uploading files: ${error.message}`);
+      setIsUploading(false);
+      setUploadProgress({});
+    }
+    
+    // Reset file input
+    e.target.value = "";
+  };
   // --- END FILE UPLOAD HANDLER ---
+
+  // --- FILE VIEWING FUNCTIONS ---
+  const handleViewUploads = () => {
+    // Navigate to uploads page or open modal
+    navigate("/my-uploads");
+  };
+
+  // Format file size
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  // Progress bar component for uploads
+  const UploadProgress = () => {
+    if (!isUploading) return null;
+    
+    const totalFiles = Object.keys(uploadProgress).length;
+    const completedFiles = Object.values(uploadProgress).filter(p => p === 100).length;
+    const overallProgress = totalFiles > 0 
+      ? (Object.values(uploadProgress).reduce((a, b) => a + b, 0) / totalFiles) 
+      : 0;
+    
+    return (
+      <div className="fixed top-20 right-4 bg-white p-4 rounded-lg shadow-lg z-50 max-w-sm">
+        <h3 className="font-semibold text-gray-800 mb-2">Uploading Files...</h3>
+        <div className="mb-2">
+          <div className="flex justify-between text-sm mb-1">
+            <span>Overall Progress</span>
+            <span>{Math.round(overallProgress)}%</span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div 
+              className="bg-green-600 h-2 rounded-full transition-all duration-300"
+              style={{ width: `${overallProgress}%` }}
+            ></div>
+          </div>
+        </div>
+        
+        <div className="max-h-48 overflow-y-auto">
+          {Object.entries(uploadProgress).map(([fileName, progress]) => (
+            <div key={fileName} className="mb-2">
+              <div className="flex justify-between text-xs mb-1">
+                <span className="truncate max-w-[200px]">{fileName}</span>
+                <span>{Math.round(progress)}%</span>
+              </div>
+              <div className="w-full bg-gray-100 rounded-full h-1.5">
+                <div 
+                  className={`h-1.5 rounded-full transition-all duration-300 ${
+                    progress === 100 ? 'bg-green-500' : 'bg-blue-500'
+                  }`}
+                  style={{ width: `${progress}%` }}
+                ></div>
+              </div>
+            </div>
+          ))}
+        </div>
+        
+        <div className="text-xs text-gray-500 mt-2">
+          {completedFiles} of {totalFiles} files completed
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="bg-white sticky top-0 z-40 shadow-md">
-      {/* Top Header */}
-      <div className="container-responsive transition-all duration-500 bg-gradient-to-r from-blue-900 to-purple-600">
-        <div className="flex justify-between items-center py-1">
+      {/* Upload Progress Overlay */}
+      <UploadProgress />
+      
+      {/* Top Header - HEIGHT REDUCED */}
+      <div className="container-responsive transition-all duration-500 bg-gradient-to-r from-blue-900 to-purple-600 py-0.5">
+        <div className="flex justify-between items-center">
           {/* Logo and Brand */}
           <div className="flex items-center space-x-3">
             <div className="relative transform transition-transform duration-300 hover:scale-110">
               <img
                 src={logo}
                 alt="E-Mart Logo"
-                className="w-14 h-14 sm:w-52 sm:h-20 object-contain transition-all duration-300 hover:brightness-110 hover:drop-shadow-lg cursor-pointer"
+                className="w-12 h-12 sm:w-48 sm:h-16 object-contain transition-all duration-300 hover:brightness-110 hover:drop-shadow-lg cursor-pointer"
                 onClick={() => navigate("/")}
               />
             </div>
@@ -438,13 +544,21 @@ const handleFileUpload = async (e) => {
           {/* Contact and Icons - Hidden on mobile */}
           <div className="hidden md:flex items-center space-x-6">
             <div className="flex space-x-3">
-              {/* Home Button */}
+              {/* Home Button - UPDATED */}
               <button
-                onClick={() => navigate("/")}
-                className="w-8 h-8 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
+                onClick={(e) => {
+                  // If already on home page, scroll to top
+                  if (location.pathname === "/") {
+                    e.preventDefault();
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  } else {
+                    navigate("/");
+                  }
+                }}
+                className="w-7 h-7 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
               >
                 <svg
-                  className="w-4 h-4 text-orange-500"
+                  className="w-3.5 h-3.5 text-orange-500"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -462,10 +576,10 @@ const handleFileUpload = async (e) => {
               {!user && (
                 <Link
                   to="/login"
-                  className="w-8 h-8 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
+                  className="w-7 h-7 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
                 >
                   <svg
-                    className="w-4 h-4 text-purple-600"
+                    className="w-3.5 h-3.5 text-purple-600"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -485,9 +599,9 @@ const handleFileUpload = async (e) => {
                 <div className="relative" ref={dropdownRef}>
                   <button
                     onClick={handleUserIconClick}
-                    className="w-8 h-8 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200 focus:outline-none"
+                    className="w-7 h-7 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200 focus:outline-none"
                   >
-                    <div className="w-6 h-6 bg-purple-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
+                    <div className="w-5 h-5 bg-purple-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
                       {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
                     </div>
                   </button>
@@ -516,8 +630,28 @@ const handleFileUpload = async (e) => {
                         >
                           📦 My Orders
                         </button>
-
                         
+                        {/* My Uploads Button - Desktop */}
+                        <button
+                          onClick={() => {
+                            setIsUserDropdownOpen(false);
+                            handleViewUploads();
+                          }}
+                          className="w-full px-6 py-3 text-left text-gray-700 hover:bg-gray-50 flex items-center text-base font-medium border-b border-gray-100"
+                        >
+                          📁 My Uploads
+                        </button>
+                        
+                        {/* Liked Products Button - Desktop */}
+                        <button
+                          onClick={() => {
+                            setIsUserDropdownOpen(false);
+                            navigate("/wishlist");
+                          }}
+                          className="w-full px-6 py-3 text-left text-gray-700 hover:bg-gray-50 flex items-center text-base font-medium border-b border-gray-100"
+                        >
+                          💖 WishList
+                        </button>
                       </div>
 
                       {/* Logout */}
@@ -537,10 +671,10 @@ const handleFileUpload = async (e) => {
               {/* Cart Icon */}
               <button
                 onClick={handleCartIconClick}
-                className="relative w-8 h-8 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
+                className="relative w-7 h-7 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
               >
                 <svg
-                  className="w-4 h-4 text-orange-500"
+                  className="w-3.5 h-3.5 text-orange-500"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -553,7 +687,7 @@ const handleFileUpload = async (e) => {
                   />
                 </svg>
                 {cartItemsCount > 0 && (
-                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-bold">
+                  <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center font-bold">
                     {cartItemsCount > 99 ? "99+" : cartItemsCount}
                   </span>
                 )}
@@ -563,13 +697,21 @@ const handleFileUpload = async (e) => {
 
           {/* Mobile Contact - Visible only on mobile */}
           <div className="md:hidden flex items-center space-x-2">
-            {/* Mobile Home Icon */}
+            {/* Mobile Home Icon - UPDATED */}
             <button
-              onClick={() => navigate("/")}
-              className="w-8 h-8 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
+              onClick={(e) => {
+                // If already on home page, scroll to top
+                if (location.pathname === "/") {
+                  e.preventDefault();
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                } else {
+                  navigate("/");
+                }
+              }}
+              className="w-7 h-7 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
             >
               <svg
-                className="w-4 h-4 text-orange-500"
+                className="w-3.5 h-3.5 text-orange-500"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -587,10 +729,10 @@ const handleFileUpload = async (e) => {
             {!user ? (
               <Link
                 to="/login"
-                className="w-8 h-8 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
+                className="w-7 h-7 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
               >
                 <svg
-                  className="w-4 h-4 text-purple-600"
+                  className="w-3.5 h-3.5 text-purple-600"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -606,9 +748,9 @@ const handleFileUpload = async (e) => {
             ) : (
               <button
                 onClick={() => setIsMenuOpen(true)}
-                className="w-8 h-8 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
+                className="w-7 h-7 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
               >
-                <div className="w-5 h-5 bg-purple-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
+                <div className="w-4 h-4 bg-purple-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
                   {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
                 </div>
               </button>
@@ -617,10 +759,10 @@ const handleFileUpload = async (e) => {
             {/* Mobile Cart Icon */}
             <button
               onClick={handleCartIconClick}
-              className="relative w-8 h-8 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
+              className="relative w-7 h-7 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
             >
               <svg
-                className="w-4 h-4 text-orange-500"
+                className="w-3.5 h-3.5 text-orange-500"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -633,7 +775,7 @@ const handleFileUpload = async (e) => {
                 />
               </svg>
               {cartItemsCount > 0 && (
-                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-bold">
+                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center font-bold">
                   {cartItemsCount > 99 ? "99+" : cartItemsCount}
                 </span>
               )}
@@ -642,10 +784,10 @@ const handleFileUpload = async (e) => {
             {/* Mobile Menu Button */}
             <button
               onClick={() => setIsMenuOpen(true)}
-              className="w-8 h-8 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
+              className="w-7 h-7 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
             >
               <svg
-                className="w-4 h-4 text-gray-700"
+                className="w-3.5 h-3.5 text-gray-700"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -662,356 +804,131 @@ const handleFileUpload = async (e) => {
         </div>
       </div>
 
-      {/* Navigation Bar */}
+      {/* Navigation Bar - HEIGHT REDUCED */}
       <div className="border-t border-gray-200">
         <div className="container-responsive">
-          <div className="flex items-center justify-between py-3">
+          <div className="flex items-center justify-between py-2">
             {/* Navigation Links - Hidden on mobile, visible on desktop */}
             <nav className="hidden md:flex items-center space-x-8">
+              {/* Home Link - UPDATED */}
               <Link
                 to="/"
-                className={`text-blue-700 hover:text-purple-500 font-medium relative ${
+                onClick={(e) => {
+                  // If already on home page, scroll to top
+                  if (location.pathname === "/") {
+                    e.preventDefault();
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }
+                }}
+                className={`text-blue-700 hover:text-purple-500 font-medium relative text-sm ${
                   location.pathname === "/" ? "active-nav-item" : ""
                 }`}
               >
                 Home
                 {location.pathname === "/" && (
-                  <span className="absolute bottom-[-8px] left-0 w-full h-[3px] bg-purple-500 rounded-full"></span>
+                  <span className="absolute bottom-[-6px] left-0 w-full h-[2px] bg-purple-500 rounded-full"></span>
                 )}
               </Link>
               <Link
                 to="/e-market"
-                className={`text-blue-700 hover:text-purple-500 font-medium relative ${
+                className={`text-blue-700 hover:text-purple-500 font-medium relative text-sm ${
                   location.pathname === "/e-market" ? "active-nav-item" : ""
                 }`}
               >
                 E-Store
                 {location.pathname === "/e-market" && (
-                  <span className="absolute bottom-[-8px] left-0 w-full h-[3px] bg-purple-500 rounded-full"></span>
+                  <span className="absolute bottom-[-6px] left-0 w-full h-[2px] bg-purple-500 rounded-full"></span>
                 )}
               </Link>
               <Link
                 to="/local-market"
-                className={`text-blue-700 hover:text-purple-500 font-medium relative ${
+                className={`text-blue-700 hover:text-purple-500 font-medium relative text-sm ${
                   location.pathname === "/local-market" ? "active-nav-item" : ""
                 }`}
               >
                 Local Market
                 {location.pathname === "/local-market" && (
-                  <span className="absolute bottom-[-8px] left-0 w-full h-[3px] bg-purple-500 rounded-full"></span>
+                  <span className="absolute bottom-[-6px] left-0 w-full h-[2px] bg-purple-500 rounded-full"></span>
                 )}
               </Link>
               <Link
                 to="/printing"
-                className={`text-blue-700 hover:text-purple-500 font-medium relative ${
+                className={`text-blue-700 hover:text-purple-500 font-medium relative text-sm ${
                   location.pathname === "/printing" ? "active-nav-item" : ""
                 }`}
               >
                 Printing
                 {location.pathname === "/printing" && (
-                  <span className="absolute bottom-[-8px] left-0 w-full h-[3px] bg-purple-500 rounded-full"></span>
+                  <span className="absolute bottom-[-6px] left-0 w-full h-[2px] bg-purple-500 rounded-full"></span>
                 )}
               </Link>
               <Link
                 to="/news-today"
-                className={`text-blue-700 hover:text-purple-500 font-medium relative ${
+                className={`text-blue-700 hover:text-purple-500 font-medium relative text-sm ${
                   location.pathname === "/news-today" ? "active-nav-item" : ""
                 }`}
               >
                 Market News 
                 {location.pathname === "/news-today" && (
-                  <span className="absolute bottom-[-8px] left-0 w-full h-[3px] bg-purple-500 rounded-full"></span>
+                  <span className="absolute bottom-[-6px] left-0 w-full h-[2px] bg-purple-500 rounded-full"></span>
                 )}
               </Link>
               {/* Oldee Link */}
               <Link
                 to="/oldee"
-                className={`text-blue-700 hover:text-purple-500 font-medium relative ${
+                className={`text-blue-700 hover:text-purple-500 font-medium relative text-sm ${
                   location.pathname === "/oldee" ? "active-nav-item" : ""
                 }`}
               >
                 Oldee
                 {location.pathname === "/oldee" && (
-                  <span className="absolute bottom-[-8px] left-0 w-full h-[3px] bg-purple-500 rounded-full"></span>
+                  <span className="absolute bottom-[-6px] left-0 w-full h-[2px] bg-purple-500 rounded-full"></span>
                 )}
               </Link>
             </nav>
 
             {/* Search and Actions - Hidden on mobile */}
             <div className="hidden md:flex items-center space-x-3">
-              {/* Search Bar Component with Auto Suggestions */}
+              {/* Search Bar Component with Auto Suggestions - MODIFIED */}
               <div className="relative" ref={searchRef}>
                 <form
                   onSubmit={handleSearchSubmit}
-                  className="w-full max-w-md flex items-center bg-white shadow-lg rounded-full px-4 py-2 gap-3"
+                  className="w-full max-w-md flex items-center bg-white shadow-lg rounded-full px-3 py-1.5 gap-3"
                 >
-                  <svg
-                    className="w-4 h-4 text-gray-500"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                    />
-                  </svg>
-
+                  {/* Left side search icon REMOVED */}
+                  
                   <input
                     type="text"
                     value={query}
                     placeholder="Search products..."
                     onChange={(e) => setQuery(e.target.value)}
                     onFocus={() => query.trim() && setShowSuggestions(true)}
-                    className="flex-1 bg-transparent outline-none text-sm w-48"
+                    className="flex-1 bg-transparent outline-none text-sm w-full pl-4"
                   />
 
+                  {/* Right side Search Icon Button - Blue Color */}
                   <button
-                    type="submit"
-                    className="bg-blue-600 text-white px-4 py-2 rounded-full text-sm hover:bg-blue-700 transition"
+                    type="button"
+                    onClick={handleIconSearch}
+                    className="text-blue-600 hover:text-blue-800 transition p-1"
                   >
-                    Search
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                      />
+                    </svg>
                   </button>
                 </form>
 
                 {/* Suggestions Box */}
-                {showSuggestions && suggestions.length > 0 && (
-                  <div className="absolute top-14 left-0 w-full bg-white shadow-lg rounded-lg border z-50 overflow-hidden">
-                    {suggestions.map((item) => (
-                      <div
-                        key={item.id}
-                        className="p-2 hover:bg-gray-100 cursor-pointer flex items-center gap-3"
-                        onClick={() => handleSelectSuggestion(item)}
-                      >
-                        <img
-                          src={item.mainImageUrl}
-                          alt={item.name}
-                          className="w-10 h-10 rounded object-cover"
-                        />
-                        <div>
-                          <p className="text-sm font-semibold">{item.name}</p>
-                          <p className="text-xs text-gray-500">{item.productTag}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {/* END Search Bar Component */}
-
-              {/* Upload and Download functionality */}
-              <div className="flex items-center space-x-2">
-                <label className="flex items-center text-gray-700 hover:text-purple-600 text-sm cursor-pointer transition duration-200">
-                  <svg
-                    className="w-4 h-4 mr-1 text-gray-600"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                    />
-                  </svg>
-                  Upload files
-                  <input
-                    type="file"
-                    multiple
-                    className="hidden"
-                    onChange={handleFileUpload}
-                  />
-                </label>
-                
-                <button
-                  onClick={() => navigate("/file-downloads")}
-                  className="flex items-center text-gray-700 hover:text-purple-600 text-sm cursor-pointer transition duration-200"
-                >
-                  <svg
-                    className="w-4 h-4 mr-1 text-gray-600"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                    />
-                  </svg>
-                  Download
-                </button>
-              </div>
-              
-              {/* Become a Seller Button */}
-              <a
-                href="https://lmart-seller.vercel.app/seller/login"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium text-sm transition duration-200 whitespace-nowrap inline-block text-center"
-              >
-                Become a Seller
-              </a>
-
-              <Link
-                to="/contact"
-                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 font-medium text-sm transition duration-200 whitespace-nowrap inline-block text-center"
-              >
-                Join US
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Mobile Menu - Dropdown */}
-      {isMenuOpen && (
-        <div className="md:hidden absolute top-0 inset-x-0 p-2 transition transform origin-top-right">
-          <div className="rounded-lg shadow-lg ring-1 ring-black ring-opacity-5 bg-white divide-y divide-gray-100">
-            {/* Header and Close Button */}
-            <div className="px-5 pt-4 pb-3 flex items-center justify-between">
-              <img src={logo} alt="E-Mart Logo" className="h-10 w-auto" onClick={() => navigate("/")} />
-              <button
-                onClick={() => setIsMenuOpen(false)}
-                className="bg-white rounded-md p-2 inline-flex items-center justify-center text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-purple-500"
-              >
-                <span className="sr-only">Close menu</span>
-                <svg
-                  className="h-6 w-6"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  aria-hidden="true"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            </div>
-
-            {/* Logged-in User Info for Mobile */}
-            {user && (
-              <div className="px-5 py-3 bg-blue-50 border-y border-gray-100">
-                <h3 className="font-bold text-gray-900 text-lg mb-1">Hello, {user.name}</h3>
-                <p className="text-gray-600 text-sm">{user.email}</p>
-              </div>
-            )}
-
-            {/* Mobile Navigation Links */}
-            <div className="py-3 px-5">
-              <nav className="grid gap-y-4">
-                {user && (
-                  <>
-                    <Link
-                      to="/my-orders"
-                      onClick={() => setIsMenuOpen(false)}
-                      className="text-base font-medium text-blue-600 hover:text-blue-500 flex items-center"
-                    >
-                      📦 My Orders
-                    </Link>
-                    <Link
-                      to="/profile"
-                      onClick={() => setIsMenuOpen(false)}
-                      className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
-                    >
-                      ⚙️ Profile Settings
-                    </Link>
-                  </>
-                )}
-                
-                <Link
-                  to="/"
-                  onClick={() => setIsMenuOpen(false)}
-                  className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
-                >
-                  🏠 Home
-                </Link>
-                <Link
-                  to="/e-market"
-                  onClick={() => setIsMenuOpen(false)}
-                  className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
-                >
-                  🛒 E-Store
-                </Link>
-                <Link
-                  to="/local-market"
-                  onClick={() => setIsMenuOpen(false)}
-                  className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
-                >
-                  🏪 Local Market
-                </Link>
-                <Link
-                  to="/printing"
-                  onClick={() => setIsMenuOpen(false)}
-                  className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
-                >
-                  🖨️ Printing
-                </Link>
-                <Link
-                  to="/news-today"
-                  onClick={() => setIsMenuOpen(false)}
-                  className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
-                >
-                  📰 Market News
-                </Link>
-                <Link
-                  to="/oldee"
-                  onClick={() => setIsMenuOpen(false)}
-                  className="text-base font-medium text-gray-900 hover:text-gray-700 flex items-center"
-                >
-                  👴 Oldee
-                </Link>
-              </nav>
-            </div>
-            
-            {/* Mobile Actions Section */}
-            <div className="py-6 px-5 space-y-6">
-              {/* Mobile Search with Auto Suggestions */}
-              <div className="relative" ref={searchRef}>
-                <form
-                  onSubmit={handleSearchSubmit}
-                  className="flex items-center bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 gap-2"
-                >
-                  <svg
-                    className="w-4 h-4 text-gray-500"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M21 21l-6-6m2-5a7 7 0 1114 0 7 7 0 01-7 7z"
-                    />
-                  </svg>
-
-                  <input
-                    type="text"
-                    value={query}
-                    placeholder="Search products..."
-                    onChange={(e) => setQuery(e.target.value)}
-                    className="flex-1 bg-transparent outline-none text-sm"
-                  />
-
-                  <button
-                    type="submit"
-                    className="bg-blue-600 text-white px-3 py-1 rounded-md text-sm hover:bg-blue-700 transition"
-                  >
-                    Search
-                  </button>
-                </form>
-
-                {/* Mobile Suggestions Box */}
                 {showSuggestions && suggestions.length > 0 && (
                   <div className="absolute top-12 left-0 w-full bg-white shadow-lg rounded-lg border z-50 overflow-hidden">
                     {suggestions.map((item) => (
@@ -1034,17 +951,276 @@ const handleFileUpload = async (e) => {
                   </div>
                 )}
               </div>
+              {/* END Search Bar Component */}
+
+              {/* Upload and Download functionality */}
+              <div className="flex items-center space-x-2">
+                <label className="flex items-center text-gray-700 hover:text-purple-600 text-xs cursor-pointer transition duration-200">
+                  <svg
+                    className="w-3.5 h-3.5 mr-1 text-gray-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                    />
+                  </svg>
+                  Upload files
+                  <input
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={handleFileUpload}
+                    disabled={isUploading}
+                  />
+                </label>
+                
+                <button
+                  onClick={() => navigate("/file-downloads")}
+                  className="flex items-center text-gray-700 hover:text-purple-600 text-xs cursor-pointer transition duration-200"
+                >
+                  <svg
+                    className="w-3.5 h-3.5 mr-1 text-gray-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                    />
+                  </svg>
+                  Download
+                </button>
+              </div>
+              
+              {/* Become a Seller Button */}
+              <a
+                href="https://lmart-seller.vercel.app/seller/login"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 font-medium text-xs transition duration-200 whitespace-nowrap inline-block text-center"
+              >
+                Become a Seller
+              </a>
+
+              <Link
+                to="/contact"
+                className="bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700 font-medium text-xs transition duration-200 whitespace-nowrap inline-block text-center"
+              >
+                Join US
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile Menu - Dropdown */}
+      {isMenuOpen && (
+        <div className="md:hidden absolute top-0 inset-x-0 p-2 transition transform origin-top-right">
+          <div className="rounded-lg shadow-lg ring-1 ring-black ring-opacity-5 bg-white divide-y divide-gray-100">
+            {/* Header and Close Button */}
+            <div className="px-5 pt-3 pb-2 flex items-center justify-between">
+              <img src={logo} alt="E-Mart Logo" className="h-8 w-auto" onClick={() => navigate("/")} />
+              <button
+                onClick={() => setIsMenuOpen(false)}
+                className="bg-white rounded-md p-1.5 inline-flex items-center justify-center text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-purple-500"
+              >
+                <span className="sr-only">Close menu</span>
+                <svg
+                  className="h-5 w-5"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            {/* Logged-in User Info for Mobile */}
+            {user && (
+              <div className="px-5 py-2 bg-blue-50 border-y border-gray-100">
+                <h3 className="font-bold text-gray-900 text-sm mb-1">Hello, {user.name}</h3>
+                <p className="text-gray-600 text-xs">{user.email}</p>
+              </div>
+            )}
+
+            {/* Mobile Navigation Links */}
+            <div className="py-2 px-5">
+              <nav className="grid gap-y-3">
+                {user && (
+                  <>
+                    <Link
+                      to="/my-orders"
+                      onClick={() => setIsMenuOpen(false)}
+                      className="text-sm font-medium text-blue-600 hover:text-blue-500 flex items-center"
+                    >
+                      📦 My Orders
+                    </Link>
+                    
+                    {/* My Uploads Button - Mobile */}
+                    <button
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        handleViewUploads();
+                      }}
+                      className="text-sm font-medium text-blue-600 hover:text-blue-500 flex items-center"
+                    >
+                      📁 My Uploads
+                    </button>
+                    
+                    {/* Liked Products Button - Mobile */}
+                    <Link
+                      to="/wishlist"
+                      onClick={() => setIsMenuOpen(false)}
+                      className="text-sm font-medium text-pink-600 hover:text-pink-500 flex items-center"
+                    >
+                      💖 Liked Products
+                    </Link>
+                  </>
+                )}
+                
+                {/* Mobile Home Link - UPDATED */}
+                <Link
+                  to="/"
+                  onClick={(e) => {
+                    // If already on home page, scroll to top
+                    if (location.pathname === "/") {
+                      e.preventDefault();
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }
+                    setIsMenuOpen(false);
+                  }}
+                  className="text-sm font-medium text-gray-900 hover:text-gray-700 flex items-center"
+                >
+                  🏠 Home
+                </Link>
+                <Link
+                  to="/e-market"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="text-sm font-medium text-gray-900 hover:text-gray-700 flex items-center"
+                >
+                  🛒 E-Store
+                </Link>
+                <Link
+                  to="/local-market"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="text-sm font-medium text-gray-900 hover:text-gray-700 flex items-center"
+                >
+                  🏪 Local Market
+                </Link>
+                <Link
+                  to="/printing"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="text-sm font-medium text-gray-900 hover:text-gray-700 flex items-center"
+                >
+                  🖨️ Printing
+                </Link>
+                <Link
+                  to="/news-today"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="text-sm font-medium text-gray-900 hover:text-gray-700 flex items-center"
+                >
+                  📰 Market News
+                </Link>
+                <Link
+                  to="/oldee"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="text-sm font-medium text-gray-900 hover:text-gray-700 flex items-center"
+                >
+                  👴 Oldee
+                </Link>
+              </nav>
+            </div>
+            
+            {/* Mobile Actions Section */}
+            <div className="py-4 px-5 space-y-4">
+              {/* Mobile Search with Auto Suggestions - MODIFIED */}
+              <div className="relative" ref={searchRef}>
+                <form
+                  onSubmit={handleSearchSubmit}
+                  className="flex items-center bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 gap-2"
+                >
+                  {/* Left side search icon REMOVED for mobile too */}
+                  
+                  <input
+                    type="text"
+                    value={query}
+                    placeholder="Search products..."
+                    onChange={(e) => setQuery(e.target.value)}
+                    className="flex-1 bg-transparent outline-none text-xs pl-3"
+                  />
+
+                  {/* Mobile Search Icon Button - Blue */}
+                  <button
+                    type="button"
+                    onClick={handleIconSearch}
+                    className="text-blue-600 hover:text-blue-800 transition p-1"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M21 21l-6-6m2-5a7 7 0 1114 0 7 7 0 01-7 7z"
+                      />
+                    </svg>
+                  </button>
+                </form>
+
+                {/* Mobile Suggestions Box */}
+                {showSuggestions && suggestions.length > 0 && (
+                  <div className="absolute top-10 left-0 w-full bg-white shadow-lg rounded-lg border z-50 overflow-hidden">
+                    {suggestions.map((item) => (
+                      <div
+                        key={item.id}
+                        className="p-1.5 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
+                        onClick={() => handleSelectSuggestion(item)}
+                      >
+                        <img
+                          src={item.mainImageUrl}
+                          alt={item.name}
+                          className="w-6 h-6 rounded object-cover"
+                        />
+                        <div>
+                          <p className="text-xs font-semibold">{item.name}</p>
+                          <p className="text-xs text-gray-500">{item.productTag}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               {/* END Mobile Search */}
 
               {/* Mobile Action Buttons */}
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {/* Become a Seller Button */}
                 <button 
                   onClick={() => {
                     navigate("/become-a-seller");
                     setIsMenuOpen(false);
                   }}
-                  className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium text-center"
+                  className="w-full bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 font-medium text-xs text-center"
                 >
                   💰 Become a Seller
                 </button>
@@ -1054,16 +1230,16 @@ const handleFileUpload = async (e) => {
                     navigate("/contact");
                     setIsMenuOpen(false);
                   }}
-                  className="w-full bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 font-medium text-center"
+                  className="w-full bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700 font-medium text-xs text-center"
                 >
                   🤝 Join US
                 </button>
                 
-                <div className="flex space-x-4 pt-2">
+                <div className="flex space-x-3 pt-1">
                   {/* Mobile Upload Button */}
-                  <label className="flex-1 flex items-center justify-center text-gray-700 hover:text-purple-600 text-sm cursor-pointer border border-gray-300 rounded-lg px-3 py-2">
+                  <label className={`flex-1 flex items-center justify-center text-gray-700 hover:text-purple-600 text-xs cursor-pointer border border-gray-300 rounded-lg px-2 py-1.5 ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
                     <svg
-                      className="w-4 h-4 mr-1 text-gray-600"
+                      className="w-3.5 h-3.5 mr-1 text-gray-600"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -1081,6 +1257,7 @@ const handleFileUpload = async (e) => {
                       multiple
                       className="hidden"
                       onChange={handleFileUpload}
+                      disabled={isUploading}
                     />
                   </label>
                   
@@ -1089,10 +1266,10 @@ const handleFileUpload = async (e) => {
                       navigate("/file-downloads");
                       setIsMenuOpen(false);
                     }}
-                    className="flex-1 flex items-center justify-center text-gray-700 hover:text-purple-600 text-sm cursor-pointer border border-gray-300 rounded-lg px-3 py-2"
+                    className="flex-1 flex items-center justify-center text-gray-700 hover:text-purple-600 text-xs cursor-pointer border border-gray-300 rounded-lg px-2 py-1.5"
                   >
                     <svg
-                      className="w-4 h-4 mr-1 text-gray-600"
+                      className="w-3.5 h-3.5 mr-1 text-gray-600"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -1114,7 +1291,7 @@ const handleFileUpload = async (e) => {
                 {user ? (
                   <button 
                     onClick={handleMobileLogout} 
-                    className="w-full flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-red-600 hover:bg-red-700"
+                    className="w-full flex items-center justify-center px-3 py-1.5 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700"
                   >
                     🚪 Logout
                   </button>
@@ -1123,11 +1300,11 @@ const handleFileUpload = async (e) => {
                     <Link
                       to="/register"
                       onClick={() => setIsMenuOpen(false)}
-                      className="w-full flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-indigo-600 hover:bg-indigo-700 mb-3"
+                      className="w-full flex items-center justify-center px-3 py-1.5 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 mb-2"
                     >
                       Sign up
                     </Link>
-                    <p className="text-center text-base font-medium text-gray-500">
+                    <p className="text-center text-sm font-medium text-gray-500">
                       Existing customer?{' '}
                       <Link to="/login" className="text-indigo-600 hover:text-indigo-500" onClick={() => setIsMenuOpen(false)}>
                         Sign in

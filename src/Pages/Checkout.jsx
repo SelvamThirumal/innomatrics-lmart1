@@ -98,10 +98,16 @@ const Checkout = () => {
   useEffect(() => {
     const currentUserId = localStorage.getItem('token'); 
     
+    // 🛑 MODIFICATION: Check for user ID and redirect to login if missing
     if (!currentUserId) {
-      setErrors(prev => ({ ...prev, form: "You must be logged in to checkout. User ID not found." }));
+      setErrors(prev => ({ 
+        ...prev, 
+        form: "You must be logged in to checkout. Redirecting to login..." 
+      }));
       setIsFetchingUser(false);
-      return;
+      // 🔥 Redirect to login page
+      navigate("/login", { replace: true, state: { from: location.pathname } }); 
+      return; 
     }
 
     const fetchUserData = async () => {
@@ -136,7 +142,7 @@ const Checkout = () => {
     };
 
     fetchUserData();
-  }, []); 
+  }, [navigate, location.pathname]); // Added dependencies
 
   // 🔥 NEW FUNCTION: Fetch Seller IDs from Products
   const fetchSellerIdsForProducts = async (productIds) => {

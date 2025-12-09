@@ -10,6 +10,7 @@ import {
   getDocs,
   addDoc,
   serverTimestamp,
+  runTransaction,
 } from "firebase/firestore";
 import { getStorage, ref, getDownloadURL } from "firebase/storage";
 import { useCart } from "../context/CartContext";
@@ -50,9 +51,8 @@ const StarBar = ({ count, total, star }) => {
     <div className="flex items-center space-x-2">
       <div className="w-40 bg-gray-200 rounded-full h-2.5">
         <div
-          className={`${
-            star >= 3 ? "bg-green-500" : "bg-yellow-500"
-          } h-2.5 rounded-full`}
+          className={`${star >= 3 ? "bg-green-500" : "bg-yellow-500"
+            } h-2.5 rounded-full`}
           style={{ width: `${percentage}%` }}
         ></div>
       </div>
@@ -84,8 +84,8 @@ const WriteReviewModal = ({ onClose, onSubmit, productName }) => {
       <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md m-4">
         <div className="flex justify-between items-center mb-4">
           <h2 className="font-bold text-xl">Write a Review – {productName}</h2>
-          <button 
-            onClick={onClose} 
+          <button
+            onClick={onClose}
             className="text-gray-500 hover:text-black transition-colors p-1 hover:bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center"
           >
             ✕
@@ -102,9 +102,8 @@ const WriteReviewModal = ({ onClose, onSubmit, productName }) => {
                   onClick={() => setRating(i + 1)}
                   onMouseEnter={() => setHoverRating(i + 1)}
                   onMouseLeave={() => setHoverRating(0)}
-                  className={`w-10 h-10 cursor-pointer transition-transform hover:scale-110 ${
-                    i < (hoverRating || rating) ? "text-yellow-500" : "text-gray-300"
-                  }`}
+                  className={`w-10 h-10 cursor-pointer transition-transform hover:scale-110 ${i < (hoverRating || rating) ? "text-yellow-500" : "text-gray-300"
+                    }`}
                   fill="currentColor"
                   viewBox="0 0 20 20"
                 >
@@ -152,11 +151,10 @@ const WriteReviewModal = ({ onClose, onSubmit, productName }) => {
 
           <button
             disabled={submitting}
-            className={`w-full py-3 rounded-lg text-white font-semibold mt-6 transition-all ${
-              submitting 
-                ? "bg-gray-400 cursor-not-allowed" 
-                : "bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 shadow-md hover:shadow-lg transform hover:-translate-y-0.5"
-            }`}
+            className={`w-full py-3 rounded-lg text-white font-semibold mt-6 transition-all ${submitting
+              ? "bg-gray-400 cursor-not-allowed"
+              : "bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 shadow-md hover:shadow-lg transform hover:-translate-y-0.5"
+              }`}
           >
             {submitting ? "Submitting..." : "Submit Review"}
           </button>
@@ -166,9 +164,6 @@ const WriteReviewModal = ({ onClose, onSubmit, productName }) => {
   );
 };
 
-/* -----------------------------------------------------------
-   ⭐ MAIN PRODUCT DETAIL PAGE
------------------------------------------------------------ */
 const ProductDetail = () => {
   const { productId } = useParams();
   const navigate = useNavigate();
@@ -218,16 +213,16 @@ const ProductDetail = () => {
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       variantType: Math.floor(Math.random() * 3)
     };
-    
+
     setToasts(prev => [newToast, ...prev]);
-    
+
     // Play success sound (optional)
     if (typeof window !== 'undefined') {
       const audio = new Audio('https://assets.mixkit.co/sfx/preview/mixkit-correct-answer-tone-2870.mp3');
       audio.volume = 0.2;
       audio.play().catch(e => console.log('Audio play failed:', e));
     }
-    
+
     // Auto remove toast after 4 seconds
     setTimeout(() => {
       setToasts(prev => prev.filter(toast => toast.id !== toastId));
@@ -239,9 +234,6 @@ const ProductDetail = () => {
     productState?.description ||
     "No description available";
 
-  /* -------------------------
-     FETCH REVIEWS FROM FIRESTORE
-  ------------------------- */
   const fetchReviews = useCallback(async () => {
     try {
       if (!productId) return;
@@ -345,13 +337,13 @@ const ProductDetail = () => {
 
       const sizesForColor = defaultColor
         ? [
-            ...new Set(
-              variants
-                .filter((v) => v.color === defaultColor)
-                .map((v) => v.size)
-                .filter(Boolean)
-            ),
-          ]
+          ...new Set(
+            variants
+              .filter((v) => v.color === defaultColor)
+              .map((v) => v.size)
+              .filter(Boolean)
+          ),
+        ]
         : sizes;
 
       const defaultSize = sizesForColor[0] || variants[0]?.size || "";
@@ -420,9 +412,6 @@ const ProductDetail = () => {
     }
   };
 
-  /* -------------------------
-     IMAGE / THUMBNAIL HANDLERS
-  ------------------------- */
   const onThumbnailClick = (idx) => {
     if (images[idx]) {
       setCurrentImg(images[idx]);
@@ -517,7 +506,7 @@ const ProductDetail = () => {
   ------------------------- */
   const onAddToCart = (e) => {
     e.preventDefault();
-    
+
     if (!product || !variant) {
       alert("Please select a variant");
       return;
@@ -553,7 +542,7 @@ const ProductDetail = () => {
     setTimeout(() => {
       button.classList.remove('clicked');
     }, 300);
-    
+
     // 🔝 SCROLL TO SHOW TOAST (TOP OF PAGE)
     window.scrollTo({
       top: 0,
@@ -561,10 +550,66 @@ const ProductDetail = () => {
     });
   };
 
-  /* -------------------------
-     BUY NOW - GO DIRECTLY TO PAYMENT
-  ------------------------- */
-  const onBuyNow = (e) => {
+  const updateStockInFirestore = async (productId, variantId, quantityToDeduct) => {
+    if (!variantId || !productId) {
+      console.error("Missing productId or variantId for stock update.");
+      return false;
+    }
+
+    const productRef = doc(db, "products", productId);
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const productDoc = await transaction.get(productRef);
+        if (!productDoc.exists()) {
+          throw new Error("Product does not exist!");
+        }
+
+        const productData = productDoc.data();
+        const variants = productData.variants || [];
+        let variantIndex = -1;
+
+        // Find the index of the specific variant
+        variantIndex = variants.findIndex(v => (v.variantId ?? v.variant_id) === variantId);
+
+        if (variantIndex === -1) {
+          // Fallback for older data without variantId, matching by color/size
+          variantIndex = variants.findIndex(
+            v => v.color === selectedColor && v.size === selectedSize
+          );
+        }
+
+        if (variantIndex === -1) {
+          throw new Error("Variant not found in product data!");
+        }
+
+        const currentStock = variants[variantIndex].stock || 0;
+        const newStock = currentStock - quantityToDeduct;
+
+        if (newStock < 0) {
+          // This should be caught by the UI check, but is a critical safety check
+          throw new Error(`Insufficient stock: Only ${currentStock} units available.`);
+        }
+
+        // Update the stock field in the local variants array
+        variants[variantIndex].stock = newStock;
+
+        // Update the document in the transaction
+        transaction.update(productRef, { variants: variants });
+      });
+
+      console.log(`Stock successfully reduced by ${quantityToDeduct} for variant: ${variantId}`);
+      return true;
+    } catch (e) {
+      console.error("Stock update transaction failed: ", e);
+      alert(`Failed to confirm purchase. ${e.message}`);
+      return false;
+    }
+  };
+
+  const onBuyNow = async (e) => { // <--- Made function async
+    e.preventDefault();
+
     if (!product || !variant) {
       alert("Please select a variant");
       return;
@@ -597,13 +642,24 @@ const ProductDetail = () => {
 
     console.log("Buy Now Item (going directly to payment):", item);
 
-    // Clear any existing cart items
+    // --- ⭐ NEW LOGIC: Update Stock in Firebase Firestore ---
+    const stockUpdateSuccess = await updateStockInFirestore(
+      product.id,
+      item.variantId,
+      item.quantity
+    );
+
+    if (!stockUpdateSuccess) {
+      // If stock update fails (e.g., race condition, insufficient stock), stop the purchase process
+      return;
+    }
+
     sessionStorage.removeItem("selectedCartItems");
-    
+
     // Store in sessionStorage for Checkout page
     sessionStorage.setItem("buyNowItem", JSON.stringify(item));
     sessionStorage.setItem("buyNowFlag", "true");
-    
+
     // Navigate to checkout and SKIP to payment page
     navigate("/checkout", {
       state: {
@@ -612,7 +668,7 @@ const ProductDetail = () => {
         skipToPayment: true  // This tells checkout to go directly to payment
       }
     });
-    
+
     // 🔝 SCROLL TO TOP
     window.scrollTo({
       top: 0,
@@ -675,13 +731,12 @@ const ProductDetail = () => {
         {toasts.map((toast, index) => (
           <div
             key={toast.id}
-            className={`relative overflow-hidden rounded-2xl shadow-2xl border-l-4 transform transition-all duration-300 hover:scale-105 hover:shadow-3xl ${
-              toast.variantType === 0 
-                ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-emerald-500' 
-                : toast.variantType === 1
+            className={`relative overflow-hidden rounded-2xl shadow-2xl border-l-4 transform transition-all duration-300 hover:scale-105 hover:shadow-3xl ${toast.variantType === 0
+              ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-emerald-500'
+              : toast.variantType === 1
                 ? 'bg-gradient-to-r from-blue-50 to-cyan-50 border-blue-500'
                 : 'bg-gradient-to-r from-purple-50 to-pink-50 border-purple-500'
-            }`}
+              }`}
             style={{
               animation: `toastSlideIn 0.5s cubic-bezier(0.68, -0.55, 0.27, 1.55) ${index * 0.1}s both, toastFloat 3s ease-in-out ${index * 0.1}s infinite alternate`
             }}
@@ -691,22 +746,21 @@ const ProductDetail = () => {
               <div className="absolute -top-10 -right-10 w-20 h-20 rounded-full bg-gradient-to-br from-white/30 to-transparent"></div>
               <div className="absolute -bottom-10 -left-10 w-24 h-24 rounded-full bg-gradient-to-tr from-white/20 to-transparent"></div>
             </div>
-            
+
             {/* Sparkle Effects */}
             <div className="absolute top-2 right-2">
               <div className="w-6 h-6 animate-ping-slow">
                 <div className="w-4 h-4 bg-gradient-to-r from-yellow-300 to-orange-300 rounded-full blur-sm"></div>
               </div>
             </div>
-            
+
             <div className="relative p-4">
               <div className="flex items-start space-x-4">
                 {/* Product Image with Glow Effect */}
                 <div className="relative flex-shrink-0">
-                  <div className={`absolute inset-0 rounded-xl blur-md ${
-                    toast.variantType === 0 ? 'bg-emerald-200' : 
+                  <div className={`absolute inset-0 rounded-xl blur-md ${toast.variantType === 0 ? 'bg-emerald-200' :
                     toast.variantType === 1 ? 'bg-blue-200' : 'bg-purple-200'
-                  }`}></div>
+                    }`}></div>
                   <img
                     src={toast.productImage}
                     alt={toast.productName}
@@ -722,16 +776,15 @@ const ProductDetail = () => {
                     </svg>
                   </div>
                 </div>
-                
+
                 {/* Toast Content */}
                 <div className="flex-1 min-w-0">
                   {/* Header with Icon */}
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center space-x-2">
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                        toast.variantType === 0 ? 'bg-emerald-100 text-emerald-600' : 
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${toast.variantType === 0 ? 'bg-emerald-100 text-emerald-600' :
                         toast.variantType === 1 ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'
-                      }`}>
+                        }`}>
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
                         </svg>
@@ -742,12 +795,12 @@ const ProductDetail = () => {
                       {toast.time}
                     </span>
                   </div>
-                  
+
                   {/* Product Name */}
                   <p className="font-semibold text-gray-800 text-sm truncate mb-1">
                     {toast.productName}
                   </p>
-                  
+
                   {/* Variant and Quantity */}
                   {toast.variant && (
                     <div className="flex items-center space-x-2 mb-2">
@@ -759,21 +812,20 @@ const ProductDetail = () => {
                       </span>
                     </div>
                   )}
-                  
+
                   {/* Price and Actions */}
                   <div className="flex items-center justify-between mt-3">
                     <div className="flex items-center space-x-2">
-                      <span className={`text-lg font-bold ${
-                        toast.variantType === 0 ? 'text-emerald-600' : 
+                      <span className={`text-lg font-bold ${toast.variantType === 0 ? 'text-emerald-600' :
                         toast.variantType === 1 ? 'text-blue-600' : 'text-purple-600'
-                      }`}>
+                        }`}>
                         ₹{toast.price}
                       </span>
                       <span className="text-xs text-gray-500 bg-white px-2 py-1 rounded-full">
                         ✓ {toast.quantity} Item{toast.quantity > 1 ? 's' : ''}
                       </span>
                     </div>
-                    
+
                     <div className="flex items-center">
                       <button
                         onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
@@ -787,15 +839,14 @@ const ProductDetail = () => {
                   </div>
                 </div>
               </div>
-              
+
               {/* Progress Bar */}
               <div className="mt-3 h-1 bg-gray-200 rounded-full overflow-hidden">
-                <div 
-                  className={`h-full rounded-full animate-progress-bar ${
-                    toast.variantType === 0 ? 'bg-gradient-to-r from-emerald-400 to-green-500' : 
-                    toast.variantType === 1 ? 'bg-gradient-to-r from-blue-400 to-cyan-500' : 
-                    'bg-gradient-to-r from-purple-400 to-pink-500'
-                  }`}
+                <div
+                  className={`h-full rounded-full animate-progress-bar ${toast.variantType === 0 ? 'bg-gradient-to-r from-emerald-400 to-green-500' :
+                    toast.variantType === 1 ? 'bg-gradient-to-r from-blue-400 to-cyan-500' :
+                      'bg-gradient-to-r from-purple-400 to-pink-500'
+                    }`}
                 ></div>
               </div>
             </div>
@@ -839,9 +890,8 @@ const ProductDetail = () => {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 p-6 md:p-8">
             {/* LEFT SIDE — IMAGES */}
             <div className="space-y-4">
-              <div className={`bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl overflow-hidden min-h-[400px] flex items-center justify-center relative ${
-                imageLoading ? 'animate-pulse' : ''
-              }`}>
+              <div className={`bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl overflow-hidden min-h-[400px] flex items-center justify-center relative ${imageLoading ? 'animate-pulse' : ''
+                }`}>
                 {mainImageError ? (
                   <div className="text-center p-8">
                     <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -875,15 +925,14 @@ const ProductDetail = () => {
                     <button
                       key={i}
                       onClick={() => onThumbnailClick(i)}
-                      className={`rounded-xl overflow-hidden border-2 transition-all duration-200 ${
-                        currentImg === img
-                          ? "border-purple-500 ring-2 ring-purple-200"
-                          : "border-gray-300 hover:border-gray-400"
-                      }`}
+                      className={`rounded-xl overflow-hidden border-2 transition-all duration-200 ${currentImg === img
+                        ? "border-purple-500 ring-2 ring-purple-200"
+                        : "border-gray-300 hover:border-gray-400"
+                        }`}
                     >
-                      <img 
-                        src={img} 
-                        className="h-20 w-full object-cover" 
+                      <img
+                        src={img}
+                        className="h-20 w-full object-cover"
                         alt={`Thumbnail ${i + 1}`}
                       />
                     </button>
@@ -918,24 +967,22 @@ const ProductDetail = () => {
                 <span className="text-blue-600 hover:text-blue-800 cursor-pointer transition-colors">
                   {stats.total} {stats.total === 1 ? 'review' : 'reviews'}
                 </span>
-                {variant?.stock !== undefined && (
-                  <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm ${
-                    variant.stock > 10 
-                      ? 'bg-green-100 text-green-800' 
+                {/* {variant?.stock !== undefined && (
+                  <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm ${variant.stock > 10
+                      ? 'bg-green-100 text-green-800'
                       : variant.stock > 0
-                      ? 'bg-yellow-100 text-yellow-800'
-                      : 'bg-red-100 text-red-800'
-                  }`}>
-                    <div className={`w-2 h-2 rounded-full mr-2 ${
-                      variant.stock > 10 
-                        ? 'bg-green-500' 
+                        ? 'bg-yellow-100 text-yellow-800'
+                        : 'bg-red-100 text-red-800'
+                    }`}>
+                    <div className={`w-2 h-2 rounded-full mr-2 ${variant.stock > 10
+                        ? 'bg-green-500'
                         : variant.stock > 0
-                        ? 'bg-yellow-500'
-                        : 'bg-red-500'
-                    }`}></div>
+                          ? 'bg-yellow-500'
+                          : 'bg-red-500'
+                      }`}></div>
                     {variant.stock > 0 ? `${variant.stock} in stock` : 'Out of stock'}
                   </div>
-                )}
+                )} */}
               </div>
 
               {/* Price */}
@@ -962,11 +1009,10 @@ const ProductDetail = () => {
                       <button
                         key={c}
                         onClick={() => setSelectedColor(c)}
-                        className={`px-4 py-2.5 rounded-lg border transition-all duration-200 font-medium ${
-                          selectedColor === c
-                            ? "border-purple-600 bg-gradient-to-r from-purple-50 to-pink-50 text-purple-700 shadow-md"
-                            : "border-gray-300 hover:border-gray-400 hover:bg-gray-50"
-                        }`}
+                        className={`px-4 py-2.5 rounded-lg border transition-all duration-200 font-medium ${selectedColor === c
+                          ? "border-purple-600 bg-gradient-to-r from-purple-50 to-pink-50 text-purple-700 shadow-md"
+                          : "border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+                          }`}
                       >
                         {c}
                       </button>
@@ -978,7 +1024,7 @@ const ProductDetail = () => {
               {/* Size */}
               {product.sizes.length > 0 && (
                 <div className="space-y-3">
-                  <h3 className="font-semibold text-gray-700">Size: <span className="font-normal">{selectedSize}</span></h3>
+                  <h3 className="font-semibold text-gray-700">Variants: <span className="font-normal">{selectedSize}</span></h3>
                   <div className="flex gap-2 flex-wrap">
                     {product.variants
                       .filter((v) => v.color === selectedColor && v.size)
@@ -987,13 +1033,12 @@ const ProductDetail = () => {
                           key={v.size}
                           onClick={() => setSelectedSize(v.size)}
                           disabled={v.stock === 0}
-                          className={`px-4 py-2.5 rounded-lg border transition-all duration-200 font-medium relative ${
-                            selectedSize === v.size
-                              ? "border-purple-600 bg-gradient-to-r from-purple-50 to-pink-50 text-purple-700 shadow-md"
-                              : v.stock > 0
+                          className={`px-4 py-2.5 rounded-lg border transition-all duration-200 font-medium relative ${selectedSize === v.size
+                            ? "border-purple-600 bg-gradient-to-r from-purple-50 to-pink-50 text-purple-700 shadow-md"
+                            : v.stock > 0
                               ? "border-gray-300 hover:border-gray-400 hover:bg-gray-50"
                               : "border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed"
-                          }`}
+                            }`}
                           title={v.stock === 0 ? "Out of stock" : ""}
                         >
                           {v.size}
@@ -1024,8 +1069,8 @@ const ProductDetail = () => {
                 <h3 className="font-semibold text-gray-700">Quantity</h3>
                 <div className="flex items-center">
                   <div className="flex items-center border border-gray-300 rounded-lg overflow-hidden">
-                    <button 
-                      onClick={decrement} 
+                    <button
+                      onClick={decrement}
                       disabled={quantity <= 1}
                       className="px-4 py-3 text-gray-700 hover:bg-gray-50 disabled:text-gray-400 disabled:hover:bg-white transition-colors"
                     >
@@ -1039,8 +1084,8 @@ const ProductDetail = () => {
                       min="1"
                       max={variant?.stock ?? 99}
                     />
-                    <button 
-                      onClick={increment} 
+                    <button
+                      onClick={increment}
                       disabled={variant?.stock !== undefined && quantity >= variant.stock}
                       className="px-4 py-3 text-gray-700 hover:bg-gray-50 disabled:text-gray-400 disabled:hover:bg-white transition-colors"
                     >
@@ -1055,29 +1100,28 @@ const ProductDetail = () => {
                 <button
                   onClick={onAddToCart}
                   disabled={!isInStock}
-                  className={`flex-1 py-4 rounded-xl text-white font-semibold transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-1 active:translate-y-0 ${
-                    isInStock
-                      ? "bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
-                      : "bg-gray-400 cursor-not-allowed"
-                  }`}
+                  className={`flex-1 py-4 rounded-xl text-white font-semibold transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-1 active:translate-y-0 ${isInStock
+                    ? "bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
+                    : "bg-gray-400 cursor-not-allowed"
+                    }`}
                 >
                   {isInStock ? "Add to Cart" : "Out of Stock"}
                 </button>
 
                 <button
-                  onClick={(e) => {
+                  onClick={async (e) => { // Made onClick handler async
                     e.currentTarget.classList.add('clicked');
                     setTimeout(() => {
                       e.currentTarget.classList.remove('clicked');
                     }, 300);
-                    onBuyNow(e);
+                    // Pass the event to onBuyNow
+                    await onBuyNow(e);
                   }}
                   disabled={!isInStock}
-                  className={`flex-1 py-4 rounded-xl text-white font-semibold transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-1 active:translate-y-0 ${
-                    isInStock
-                      ? "bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
-                      : "bg-gray-400 cursor-not-allowed"
-                  }`}
+                  className={`flex-1 py-4 rounded-xl text-white font-semibold transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-1 active:translate-y-0 ${isInStock
+                    ? "bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
+                    : "bg-gray-400 cursor-not-allowed"
+                    }`}
                 >
                   Buy Now
                 </button>
@@ -1125,9 +1169,8 @@ const ProductDetail = () => {
                           <span className="w-8 text-gray-600">{s}★</span>
                           <div className="flex-1 bg-gray-200 rounded-full h-2.5 overflow-hidden">
                             <div
-                              className={`h-full rounded-full ${
-                                s >= 3 ? "bg-gradient-to-r from-green-400 to-emerald-500" : "bg-gradient-to-r from-yellow-400 to-orange-500"
-                              }`}
+                              className={`h-full rounded-full ${s >= 3 ? "bg-gradient-to-r from-green-400 to-emerald-500" : "bg-gradient-to-r from-yellow-400 to-orange-500"
+                                }`}
                               style={{
                                 width: `${percentage}%`,
                               }}

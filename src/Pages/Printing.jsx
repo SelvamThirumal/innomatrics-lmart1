@@ -1,49 +1,10 @@
+// pages/Printing.jsx
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useCart } from "../context/CartContext";
-
+import { useWishlist } from "../context/WishlistContext";
 import { getApps, initializeApp } from "firebase/app";
 import { getFirestore, collection, getDocs } from "firebase/firestore";
-
-/* --------------------- Animations (your customStyles) --------------------- */
-const customStyles = `
-  @keyframes fadeInUp { from { opacity:0; transform:translateY(30px);} to {opacity:1; transform:translateY(0);} }
-  @keyframes slideInLeft { from {opacity:0; transform:translateX(-50px);} to{opacity:1; transform:translateX(0);} }
-  @keyframes slideInRight { from {opacity:0; transform:translateX(50px);} to{opacity:1; transform:translateX(0);} }
-  @keyframes slideUp { from {opacity:0; transform:translateY(50px);} to {opacity:1; transform:translateY(0);} }
-  @keyframes zoomIn { from {opacity:0; transform:scale(0.8);} to {opacity:1; transform:scale(1);} }
-  @keyframes float { 0%,100%{transform:translateY(0px);} 50%{transform:translateY(-20px);} }
-  @keyframes bounceSlow { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-10px);} }
-  @keyframes spinSlow { from{transform:rotate(0deg);} to{transform:rotate(360deg);} }
-
-  .animate-fade-in-up { animation: fadeInUp 0.8s ease-out forwards; }
-  .animate-slide-in-left { animation: slideInLeft 0.8s ease-out forwards; }
-  .animate-slide-in-right { animation: slideInRight 0.8s ease-out forwards; }
-  .animate-slide-up { animation: slideUp 0.8s ease-out forwards; }
-  .animate-zoom-in { animation: zoomIn 0.8s ease-out forwards; }
-  .animate-float { animation: float 3s ease-in-out infinite; }
-  .animate-bounce-slow { animation: bounceSlow 2s ease-in-out infinite; }
-  .animate-spin-slow { animation: spinSlow 3s linear infinite; }
-
-  .animation-delay-100 { animation-delay: 0.1s; }
-  .animation-delay-200 { animation-delay: 0.2s; }
-  .animation-delay-300 { animation-delay: 0.3s; }
-  .animation-delay-400 { animation-delay: 0.4s; }
-  .animation-delay-500 { animation-delay: 0.5s; }
-  .animation-delay-600 { animation-delay: 0.6s; }
-  .animation-delay-700 { animation-delay: 0.7s; }
-  .animation-delay-800 { animation-delay: 0.8s; }
-  .animation-delay-900 { animation-delay: 0.9s; }
-`;
-
-// inject CSS once (guard)
-if (typeof document !== "undefined" && !document.getElementById("printing-custom-styles")) {
-  const styleEl = document.createElement("style");
-  styleEl.id = "printing-custom-styles";
-  styleEl.type = "text/css";
-  styleEl.innerText = customStyles;
-  document.head.appendChild(styleEl);
-}
 
 /* --------------------- Firebase init --------------------- */
 const firebaseConfig =
@@ -115,11 +76,42 @@ const extractSubcategories = (products, mainCategory) => {
   return [...set];
 };
 
+/* ---------------- Toast Notification Component ---------------- */
+const ToastNotification = ({ message, type = "success", onClose }) => {
+  if (!message) return null;
+  const bg = type === "success" ? "bg-green-600" : "bg-red-600";
+
+  return (
+    <div className="fixed top-5 right-5 z-50 animate-fade-in-down">
+      <div className={`${bg} text-white px-6 py-3 rounded-lg shadow-xl flex items-center gap-3`}>
+        <span>{message}</span>
+        <button onClick={onClose} className="text-white hover:text-gray-200 transition">✖</button>
+      </div>
+    </div>
+  );
+};
+
 /* --------------------- Product Card Component --------------------- */
-const ProductCard = ({ product, addToCart, getQuantity, updateQuantity, navigate }) => {
+const ProductCard = ({ product, addToCart, getQuantity, updateQuantity, navigate, onToggleWishlist }) => {
   const qty = getQuantity(product.id);
   const { finalPrice, original, discount } = getPriceData(product);
   const rating = product.rating || 4.3;
+  
+  // Use Wishlist Context
+  const { toggleWishlist, isProductInWishlist } = useWishlist();
+  const inWishlist = isProductInWishlist(product.id);
+
+  const handleWishlistToggle = (e) => {
+    e.stopPropagation(); // Prevent product card click
+    toggleWishlist(product);
+    
+    // Show toast notification
+    const message = inWishlist 
+      ? "❌ Removed from Liked Products" 
+      : "❤️ Added to Liked Products";
+    
+    if (onToggleWishlist) onToggleWishlist(message);
+  };
 
   return (
     <div
@@ -128,6 +120,29 @@ const ProductCard = ({ product, addToCart, getQuantity, updateQuantity, navigate
       onClick={() => navigate(`/product/${product.id}`, { state: { product } })}
     >
       <div className="relative h-48">
+        {/* Heart Button - Top Right */}
+        <button
+          onClick={handleWishlistToggle}
+          className={`absolute top-3 right-3 p-2 bg-white rounded-full shadow-md hover:scale-110 transition z-10 ${
+            inWishlist ? "text-red-600" : "text-gray-400"
+          }`}
+          title={inWishlist ? "Remove from Wishlist" : "Add to Wishlist"}
+        >
+          <svg
+            className="w-5 h-5"
+            fill={inWishlist ? "red" : "none"}
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-.318-.318a4.5 4.5 0 00-6.364 0z"
+            />
+          </svg>
+        </button>
+
         <img
           src={product.image}
           alt={product.name}
@@ -136,13 +151,13 @@ const ProductCard = ({ product, addToCart, getQuantity, updateQuantity, navigate
         />
 
         {discount > 0 && (
-          <span className="absolute top-3 right-3 bg-red-600 text-white text-xs px-2 py-1 rounded">
+          <span className="absolute top-3 left-3 bg-red-600 text-white text-xs px-2 py-1 rounded">
             -{discount}%
           </span>
         )}
 
         {product.isNew && (
-          <span className="absolute top-3 left-3 bg-blue-600 text-white text-xs px-2 py-1 rounded">
+          <span className="absolute bottom-3 left-3 bg-blue-600 text-white text-xs px-2 py-1 rounded">
             New
           </span>
         )}
@@ -180,27 +195,25 @@ const ProductCard = ({ product, addToCart, getQuantity, updateQuantity, navigate
           )}
         </div>
 
-        {/* Add To Cart */}
+        {/* Add To Cart / View Cart Section */}
         {qty > 0 ? (
-          <div className="flex items-center justify-between gap-2">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              
+               
+               
+            </div>
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                updateQuantity(product.id, qty - 1);
+                navigate("/cart");
               }}
-              className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center"
+              className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-medium transition flex items-center justify-center gap-2"
             >
-              -
-            </button>
-            <span className="flex-1 text-center font-medium">{qty} in Cart</span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                updateQuantity(product.id, qty + 1);
-              }}
-              className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center"
-            >
-              +
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+              View Cart
             </button>
           </div>
         ) : (
@@ -209,9 +222,12 @@ const ProductCard = ({ product, addToCart, getQuantity, updateQuantity, navigate
               e.stopPropagation();
               addToCart({ id: product.id, ...product, quantity: 1 });
             }}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium transition flex items-center justify-center gap-2"
           >
-            + Add to Cart
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+            Add to Cart
           </button>
         )}
       </div>
@@ -235,6 +251,7 @@ const Printing = () => {
   const [priceRange, setPriceRange] = useState([0, 5000]);
   const [loading, setLoading] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
 
   // 👇 Extract Search Query from URL
   const searchQuery = useMemo(() => {
@@ -242,12 +259,20 @@ const Printing = () => {
     return params.get("q") || "";
   }, [location.search]);
 
+  // Auto-hide toast after 3 seconds
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(""), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
+
   const getQuantity = (id) => {
     const item = items.find(i => i.id === id);
     return item ? item.quantity : 0;
   };
 
-  // ---------------- FETCH PRODUCTS (SAME FORMAT AS EMarket) ----------------
+  // ---------------- FETCH PRODUCTS ----------------
   useEffect(() => {
     const load = async () => {
       setLoading(true);
@@ -272,11 +297,10 @@ const Printing = () => {
           };
         });
 
-        // 🛠️ Filter products where productTag is "Printing"
+        // Filter products where productTag is "Printing"
         const printingProducts = allProducts.filter(product => {
           const productTag = product.productTag;
           
-          // Handle both string and object formats
           if (typeof productTag === 'string') {
             return productTag.toLowerCase() === 'printing';
           } else if (productTag && typeof productTag === 'object') {
@@ -297,6 +321,7 @@ const Printing = () => {
         setPriceRange([0, Math.min(Math.ceil(maxPrice / 1000) * 1000, MAX_SLIDER)]);
       } catch (err) {
         console.error("Printing Fetch Error:", err);
+        setToastMessage("Error loading products");
       } finally {
         setLoading(false);
       }
@@ -309,7 +334,6 @@ const Printing = () => {
   useEffect(() => {
     const subs = extractSubcategories(products, selectedMainCategory);
     setSubCategories(subs);
-    // Reset subcategory selection only if no search is active
     if (!searchQuery) {
       setSelectedSubCategory("All");
     }
@@ -323,11 +347,9 @@ const Printing = () => {
       const cat = p.category?.name || "";
       const sub = p.subCategory?.name || "";
 
-      // Check price filter (always apply)
       const price = p.price || 0;
       const priceMatch = price >= priceRange[0] && price <= priceRange[1];
 
-      // 👇 Check search query filter
       const searchMatch = !queryTerm || (
         keywordMatches(p.name, queryTerm) ||
         keywordMatches(p.description, queryTerm) ||
@@ -336,12 +358,9 @@ const Printing = () => {
         keywordMatches(p.subCategory?.name, queryTerm)
       );
 
-      // Check category filters (only apply if NO search query is present)
       if (queryTerm) {
-        // If searching, only price and search must match. Ignore category filters.
         return priceMatch && searchMatch;
       } else {
-        // If not searching, all filters must match.
         const mainCategoryMatch =
           selectedMainCategory === "All Products" ||
           cat === selectedMainCategory;
@@ -368,35 +387,27 @@ const Printing = () => {
     setPriceRange(copy);
   };
 
-  // small helpers for WhatsApp / call
-  const handleWhatsAppClick = () => {
-    const phoneNumber = "919880444189";
-    const message = "Hello! I am interested in your printing services. Can you provide more information?";
-    const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
-    window.open(whatsappUrl, "_blank");
-  };
-
-  const handleCallClick = () => {
-    window.location.href = "tel:+919880444189";
-  };
-
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Toast Notification */}
+      <ToastNotification 
+        message={toastMessage} 
+        onClose={() => setToastMessage("")} 
+        type={toastMessage.includes("❌") ? "error" : "success"}
+      />
       
-      {/* Hero */}
-      <div className="bg-gradient-to-r from-blue-600 to-purple-700 text-white py-16">
-        <div className="max-w-7xl mx-auto px-4 text-center">
-          <h1 className="text-5xl font-bold mb-6 animate-fade-in-up">Professional Printing Services</h1>
-          <p className="text-xl mb-8 animate-fade-in-up animation-delay-200">High-quality printing solutions for all your business needs</p>
-
-          <div className="flex flex-col sm:flex-row justify-center gap-4 animate-fade-in-up animation-delay-400">
-            <button onClick={handleWhatsAppClick} className="bg-green-500 hover:bg-green-600 text-white px-8 py-3 rounded-lg font-semibold transition-all duration-300 transform hover:scale-105 flex items-center justify-center gap-2">
-              <span>💬</span> WhatsApp Now
-            </button>
-            <button onClick={handleCallClick} className="bg-white text-blue-600 hover:bg-gray-100 px-8 py-3 rounded-lg font-semibold transition-all duration-300 transform hover:scale-105 flex items-center justify-center gap-2">
-              <span>📞</span> Call 9880444189
-            </button>
-          </div>
+      {/* Mobile Filter Button */}
+      <div className="lg:hidden bg-white border-b shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="w-full flex items-center justify-center gap-2 py-2 bg-blue-600 text-white rounded-lg font-medium transition hover:bg-blue-700"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+            {showFilters ? 'Hide Filters' : 'Show Filters'}
+          </button>
         </div>
       </div>
 
@@ -404,7 +415,7 @@ const Printing = () => {
       <div className="bg-white border-b shadow-sm">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex overflow-x-auto py-3 space-x-6">
-            {/* 👇 Hide category buttons if a search is active */}
+            {/* Hide category buttons if a search is active */}
             {!searchQuery ? (
               mainCategories.map((category) => (
                 <button
@@ -420,7 +431,7 @@ const Printing = () => {
                 </button>
               ))
             ) : (
-              // 👇 Show search term instead of categories
+              // Show search term instead of categories
               <h2 className="text-xl font-semibold py-2">
                 Search Results for: <span className="text-blue-600">"{searchQuery}"</span>
               </h2>
@@ -430,21 +441,22 @@ const Printing = () => {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-6">
-        <div className="flex gap-6">
-          {/* Sidebar Filters */}
-          <div className="w-64 bg-white p-4 rounded-lg shadow-sm border sticky top-20">
+        <div className="flex flex-col lg:flex-row gap-6">
+          {/* Sidebar Filters - Responsive */}
+          <div className={`${showFilters ? 'block' : 'hidden'} lg:block w-full lg:w-64 bg-white p-4 rounded-lg shadow-sm border lg:sticky lg:top-20 self-start`}>
             <h2 className="font-semibold mb-3">Filters</h2>
 
             {/* Subcategories */}
             <h3 className="text-sm font-medium mb-2">Subcategories</h3>
             <div className="space-y-2 mb-6">
               {subCategories.map((subCat) => (
-                <label key={subCat} className="flex items-center space-x-2">
+                <label key={subCat} className="flex items-center space-x-2 cursor-pointer">
                   <input
                     type="radio"
                     name="subcategory"
                     checked={selectedSubCategory === subCat}
                     onChange={() => setSelectedSubCategory(subCat)}
+                    className="cursor-pointer"
                   />
                   <span className="text-sm">{subCat}</span>
                 </label>
@@ -453,7 +465,7 @@ const Printing = () => {
 
             <hr className="my-4" />
 
-            {/* Price Range - SINGLE SLIDER WITH MIN/MAX DISPLAY */}
+            {/* Price Range */}
             <div className="mb-6">
               <h3 className="text-sm font-medium mb-4">Price Range</h3>
 
@@ -513,9 +525,9 @@ const Printing = () => {
 
           {/* Products Area */}
           <div className="flex-1">
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <h2 className="text-xl font-semibold">
-                {/* 👇 Update Title based on search query */}
+                {/* Update Title based on search query */}
                 {searchQuery
                   ? `Results for "${searchQuery}"`
                   : selectedMainCategory === "All Products"
@@ -523,7 +535,7 @@ const Printing = () => {
                   : selectedMainCategory}
                 {!searchQuery && selectedSubCategory !== "All" && ` - ${selectedSubCategory}`}
               </h2>
-              <div className="text-sm text-gray-600">
+              <div className="text-sm text-gray-600 bg-gray-100 px-3 py-1 rounded-full">
                 {filtered.length} products
               </div>
             </div>
@@ -541,13 +553,13 @@ const Printing = () => {
                 {searchQuery
                   ? `No products found matching "${searchQuery}"`
                   : "No products found"}
-                <p className="text-gray-400 text-sm">Try adjusting your filters.</p>
+                <p className="text-gray-400 text-sm mt-2">Try adjusting your filters.</p>
               </div>
             )}
 
-            {/* Products Grid */}
+            {/* Products Grid - Responsive */}
             {!loading && filtered.length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
                 {filtered.map((p) => (
                   <ProductCard
                     key={p.id}
@@ -556,6 +568,7 @@ const Printing = () => {
                     updateQuantity={updateQuantity}
                     getQuantity={getQuantity}
                     navigate={navigate}
+                    onToggleWishlist={(msg) => setToastMessage(msg)}
                   />
                 ))}
               </div>
@@ -563,6 +576,9 @@ const Printing = () => {
           </div>
         </div>
       </div>
+      
+      {/* FIXED CHECKOUT BUTTON */}
+      
     </div>
   );
 };

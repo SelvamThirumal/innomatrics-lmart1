@@ -1,13 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
 import { db } from "../../firebase";
 import {
   collection,
-  query,
-  where,
   onSnapshot,
   doc,
-  getDoc,
+  getDoc
 } from "firebase/firestore";
 
 const FileDownloads = () => {
@@ -15,29 +12,15 @@ const FileDownloads = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
 
-  const user = JSON.parse(localStorage.getItem("user") || "null");
-
-  // 🔥 FETCH FILE DOCUMENTS
+  // 🔥 FETCH ALL DOCUMENTS
   useEffect(() => {
-    if (!user || !user.uid) {
-      console.log("No User UID found!");
-      setLoading(false);
-      return;
-    }
-
-    const q = query(
-      collection(db, "uploadfile"),
-      where("customerUserId", "==", user.uid)
-    );
+    const q = collection(db, "uploadfile");
 
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const docList = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-        setFileDocs(docList);
+        const docs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setFileDocs(docs);
         setLoading(false);
       },
       (err) => {
@@ -47,9 +30,9 @@ const FileDownloads = () => {
     );
 
     return () => unsubscribe();
-  }, [user?.uid]);
+  }, []);
 
-  // 🔥 FLATTEN FILE ARRAY
+  // Flatten files
   const allFiles = fileDocs.flatMap((doc) =>
     (doc.files || []).map((file) => ({
       ...file,
@@ -57,7 +40,7 @@ const FileDownloads = () => {
     }))
   );
 
-  // 🔥 SEARCH FILTER
+  // Search filter
   const filteredFiles = allFiles.filter((file) => {
     const s = searchTerm.toLowerCase();
     return (
@@ -66,121 +49,76 @@ const FileDownloads = () => {
     );
   });
 
-  // 🔥 FETCH downloadURL FROM FIRESTORE
+  // 🔥 Download function
   const handleFetchDownload = async (parentDocId, fileId) => {
     try {
       const docRef = doc(db, "uploadfile", parentDocId);
-      const docSnap = await getDoc(docRef);
+      const snap = await getDoc(docRef);
 
-      if (!docSnap.exists()) {
-        alert("Document not found!");
-        return;
-      }
+      if (!snap.exists()) return alert("Document not found!");
 
-      const data = docSnap.data();
+      const data = snap.data();
       const file = (data.files || []).find((f) => f.fileId === fileId);
 
-      if (!file) {
-        alert("File not found in database!");
-        return;
-      }
+      if (!file) return alert("File not found!");
+      if (!file.downloadURL) return alert("Download URL missing!");
 
-      if (!file.downloadURL) {
-        alert("Download link not available yet!");
-        return;
-      }
-
-      // 🔥 OPEN URL (starts download)
-      window.open(file.downloadURL, "_blank");
-    } catch (error) {
-      console.error("Error fetching download:", error);
-      alert("Error fetching download link.");
+      const link = document.createElement("a");
+      link.href = file.downloadURL;
+      link.download = file.originalName || "download";
+      link.target = "_blank";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error("Download error:", err);
+      alert("Error downloading file.");
     }
   };
 
-  // 🔥 LOADING UI
   if (loading)
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin h-10 w-10 border-4 border-blue-600 border-t-transparent rounded-full"></div>
-        <p className="ml-3 font-semibold">Loading your downloads...</p>
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="animate-spin border-4 border-blue-600 border-t-transparent rounded-full h-10 w-10"></div>
+        <p className="ml-3 text-gray-700">Loading files...</p>
       </div>
     );
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+    <div className="min-h-screen bg-gray-50 p-6 md:p-10">
       <div className="max-w-5xl mx-auto">
-        <h1 className="text-3xl font-bold mb-6 text-gray-800">
-          Available Downloads
-        </h1>
+        <h1 className="text-3xl font-bold mb-6">Your Uploaded Files</h1>
 
-        <input
-          type="text"
-          placeholder="Search by filename or status..."
-          className="w-full p-4 border border-gray-200 rounded-xl mb-8 shadow-sm focus:ring-2 focus:ring-blue-500 outline-none"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
+       
 
         {filteredFiles.length === 0 ? (
-          <div className="bg-white p-20 text-center rounded-2xl border-2 border-dashed border-gray-200">
-            <p className="text-gray-400 text-lg">
-              No correction downloads available right now.
-            </p>
-            <p className="text-sm text-gray-400 mt-2">
-              Check your document list in Admin or re-login.
-            </p>
+          <div className="bg-white p-20 text-center rounded-xl border-2 border-dashed">
+            <p className="text-gray-500 text-lg">No files found.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {filteredFiles.map((file, index) => (
               <div
                 key={`${file.fileId}-${index}`}
-                className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow"
+                className="bg-white p-6 rounded-xl shadow border"
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <h3 className="font-bold text-gray-900 text-lg line-clamp-1">
-                      {file.originalName || "New File"}
-                    </h3>
-                    <p className="text-xs text-gray-400 mt-1 uppercase">
-                      Type: {file.fileType}
-                    </p>
-                  </div>
+                <h3 className="font-bold text-lg">{file.originalName}</h3>
 
-                  <span
-                    className={`px-2 py-1 text-[10px] font-bold rounded ${
-                      file.fileType.includes("image")
-                        ? "bg-purple-100 text-purple-600"
-                        : "bg-blue-100 text-blue-600"
-                    }`}
-                  >
-                    {file.fileType.split("/")[1].toUpperCase()}
+                <p className="text-xs text-gray-600 mt-1">
+                  Type: {file.fileType}
+                </p>
+
+                {/* STATUS + DOWNLOAD */}
+                <div className="mt-4 flex justify-between items-center">
+                  <span className="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded-full">
+                    {file.status?.replace("_", " ") || "unknown"}
                   </span>
-                </div>
 
-                <div className="mt-4 flex items-center justify-between">
-                  <div>
-                    <span className="block text-xs text-gray-400 mb-1">
-                      Status
-                    </span>
-                    <span
-                      className={`px-3 py-1 text-xs font-semibold rounded-full ${
-                        file.status === "pending_review"
-                          ? "bg-yellow-50 text-yellow-600"
-                          : "bg-green-50 text-green-600"
-                      }`}
-                    >
-                      {file.status.replace("_", " ")}
-                    </span>
-                  </div>
-
-                  {/* 🔥 DOWNLOAD BUTTON (fetches URL first) */}
                   <button
                     onClick={() =>
                       handleFetchDownload(file.parentDocId, file.fileId)
                     }
-                    className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold text-sm hover:bg-blue-700 transition"
+                    className="bg-blue-600 text-white px-5 py-2 rounded-lg"
                   >
                     Download
                   </button>
