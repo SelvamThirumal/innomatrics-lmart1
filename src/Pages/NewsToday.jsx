@@ -23,6 +23,7 @@ const NewsToday = () => {
             id: doc.id,
             title: data.title || 'Untitled',
             excerpt: data.excerpt || '',
+            content: data.content || data.excerpt || '',
             category: data.subcategory || 'General',
             author: data.author || 'Admin',
             date: formatDate(data.createdAt || data.date),
@@ -59,14 +60,15 @@ const NewsToday = () => {
     const matchC = selectedCategory === 'all' || a.category === selectedCategory
     const matchS =
       a.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      a.excerpt.toLowerCase().includes(searchTerm.toLowerCase())
+      a.excerpt.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      a.content.toLowerCase().includes(searchTerm.toLowerCase())
     return matchC && matchS
   })
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        Loading...
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-600"></div>
       </div>
     )
   }
@@ -74,101 +76,199 @@ const NewsToday = () => {
   return (
     <div className="min-h-screen bg-gray-50">
 
-      {/* ⭐ Category Buttons – NOT FIXED NOW */}
-      <div className="bg-white">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex flex-wrap gap-2">
-          {categories.map((c) => (
-            <button
-              key={c}
-              onClick={() => setSelectedCategory(c)}
-              className={`px-4 py-2 rounded-full font-semibold transition-all ${
-                selectedCategory === c
-                  ? 'bg-purple-600 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}>
-              {c}
-            </button>
-          ))}
+      {/* Header Section */}
+      <div className="bg-gradient-to-r from-purple-700 to-indigo-800 text-white">
+        <div className="max-w-7xl mx-auto px-4 py-12">
+          <h1 className="text-4xl md:text-5xl font-bold mb-4">📰 News Today</h1>
+          <p className="text-xl text-purple-100">Stay updated with the latest articles and insights</p>
         </div>
       </div>
 
-      {/* ⭐ Main Content */}
+      {/* Categories Filter */}
+      <div className="bg-white border-b sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          <div className="flex overflow-x-auto pb-2 space-x-2 scrollbar-hide">
+            {categories.map((c) => (
+              <button
+                key={c}
+                onClick={() => setSelectedCategory(c)}
+                className={`px-4 py-2 rounded-full font-semibold text-sm whitespace-nowrap transition-all ${
+                  selectedCategory === c
+                    ? 'bg-purple-600 text-white shadow-md'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}>
+                {c === 'all' ? 'All News' : c}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 py-8">
 
-        <h2 className="text-3xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-          <span>📰</span> Latest Articles
-        </h2>
+     
 
-        {/* Search */}
+        {/* Results Count */}
         <div className="mb-6">
-          <input
-            type="text"
-            placeholder="Search articles..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-purple-500"
-          />
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">
+            {selectedCategory === 'all' ? 'Latest Articles' : `${selectedCategory} Articles`}
+            <span className="ml-2 text-purple-600">({filtered.length})</span>
+          </h2>
+          {searchTerm && (
+            <p className="text-gray-600">
+              Search results for: "<span className="font-semibold">{searchTerm}</span>"
+            </p>
+          )}
         </div>
 
-        {/* Articles Grid */}
-        <div className="grid md:grid-cols-3 gap-6">
-          {filtered.map((a) => (
+        {/* Articles Grid - IMAGE ON TOP LAYOUT */}
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+          {filtered.map((article) => (
             <div
-              key={a.id}
-              className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-xl transition">
-
-              <img
-                src={a.image}
-                alt={a.title}
-                className="w-full h-48 object-cover"
-              />
-
-              <div className="p-4">
-                <h3 className="text-xl font-bold">{a.title}</h3>
-                <p className="text-gray-600 mt-1 line-clamp-2">{a.excerpt}</p>
-
-                <button
-                  onClick={() => setSelectedArticle(a)}
-                  className="mt-4 bg-purple-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-700">
-                  Read →
-                </button>
+              key={article.id}
+              className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200 hover:shadow-2xl transition-all duration-300 flex flex-col">
+              
+              {/* Image - TOP */}
+              <div className="relative h-48 overflow-hidden">
+                <img
+                  src={article.image}
+                  alt={article.title}
+                  className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
+                />
+                {/* Category Badge on Image */}
+                <div className="absolute top-3 left-3">
+                  <span className="inline-block bg-white/90 backdrop-blur-sm text-purple-700 px-3 py-1 rounded-full text-sm font-semibold">
+                    {article.category}
+                  </span>
+                </div>
+              </div>
+              
+              {/* Content Container */}
+              <div className="p-5 flex-grow flex flex-col">
+                {/* Date & Author */}
+                <div className="mb-2">
+                  <p className="text-gray-500 text-sm">
+                    {article.date} - By {article.author}
+                  </p>
+                </div>
+                
+                {/* Headline/Title */}
+                <h3 className="text-xl font-bold text-gray-800 mb-3 line-clamp-2">
+                  {article.title}
+                </h3>
+                
+                {/* Content/Excerpt */}
+                <div className="mb-4 flex-grow">
+                  <p className="text-gray-600 line-clamp-3">
+                    {article.excerpt}
+                  </p>
+                </div>
+                
+                {/* Read More Button */}
+                <div className="mt-auto">
+                  <button
+                    onClick={() => setSelectedArticle(article)}
+                    className="w-full inline-flex items-center justify-center text-purple-600 font-semibold hover:text-purple-800 transition-colors group py-2 border border-purple-200 hover:border-purple-300 rounded-lg">
+                    <span>READ MORE →</span>
+                    <span className="ml-1 opacity-0 group-hover:opacity-100 group-hover:ml-2 transition-all duration-300">→</span>
+                  </button>
+                </div>
               </div>
             </div>
           ))}
         </div>
+
+        {/* No Results Message */}
+        {filtered.length === 0 && (
+          <div className="text-center py-16">
+            <div className="text-6xl mb-6 opacity-50">📰</div>
+            <h3 className="text-2xl font-bold text-gray-700 mb-3">No articles found</h3>
+            <p className="text-gray-600 max-w-md mx-auto">
+              {searchTerm 
+                ? `No articles match your search for "${searchTerm}". Try different keywords.`
+                : `No articles available in the ${selectedCategory} category.`}
+            </p>
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="mt-6 text-purple-600 font-semibold hover:text-purple-800">
+                Clear search
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* ⭐ Popup */}
+      {/* Full Article Modal/Page */}
       {selectedArticle && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center px-4">
-          <div className="bg-white w-full max-w-3xl rounded-2xl overflow-hidden shadow-xl max-h-[90vh] overflow-y-auto">
-
-            <div className="flex justify-between items-center px-6 py-4 border-b bg-white">
-              <h2 className="text-2xl font-bold">{selectedArticle.title}</h2>
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-start justify-center p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl my-8">
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
+              <div>
+                <span className="inline-block bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-sm font-semibold mr-3">
+                  {selectedArticle.category}
+                </span>
+                <span className="text-gray-500 text-sm">
+                  {selectedArticle.date} • By {selectedArticle.author}
+                </span>
+              </div>
               <button
                 onClick={() => setSelectedArticle(null)}
-                className="text-2xl text-gray-600 hover:text-black">
+                className="text-2xl text-gray-600 hover:text-black transition-colors p-2 hover:bg-gray-100 rounded-full">
                 ✕
               </button>
             </div>
 
-            <img
-              src={selectedArticle.image}
-              className="w-full h-72 object-cover"
-              alt="selected"
-            />
-
-            <div className="p-6">
-              <p className="text-gray-700 text-lg leading-relaxed">
-                {selectedArticle.excerpt}
-              </p>
-
-              <div className="mt-6 pt-4 border-t text-sm text-gray-500">
-                <p>Category: {selectedArticle.category}</p>
-                <p>Published: {selectedArticle.date}</p>
+            {/* Article Hero Image */}
+            <div className="relative h-96">
+              <img
+                src={selectedArticle.image}
+                alt={selectedArticle.title}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
+              <div className="absolute bottom-0 left-0 right-0 p-8">
+                <h1 className="text-4xl font-bold text-white mb-4">
+                  {selectedArticle.title}
+                </h1>
               </div>
             </div>
 
+            {/* Article Content */}
+            <div className="p-8">
+              <div className="prose prose-lg max-w-none">
+                <p className="text-xl text-gray-700 leading-relaxed mb-8 border-l-4 border-purple-500 pl-4 italic">
+                  {selectedArticle.excerpt}
+                </p>
+                
+                {/* Full Content */}
+                <div className="text-gray-800 space-y-6 text-lg leading-relaxed">
+                  <p>
+                    {selectedArticle.content || selectedArticle.excerpt}
+                  </p>
+                  <p>
+                    This is the full article content. In a real application, you would have 
+                    the complete article text stored in your database. The excerpt shown 
+                    above is just a preview of the full content.
+                  </p>
+                  <p>
+                    The "READ MORE →" button opens this detailed view where users can read 
+                    the entire article without leaving the page.
+                  </p>
+                </div>
+              </div>
+
+              {/* Back to List Button */}
+              <div className="mt-12 pt-8 border-t">
+                <button
+                  onClick={() => setSelectedArticle(null)}
+                  className="inline-flex items-center px-5 py-3 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition-colors shadow-md hover:shadow-lg">
+                  ← Back to Articles List
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

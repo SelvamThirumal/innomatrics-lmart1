@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { CartProvider } from './context/CartContext';
 import { OrderProvider } from './context/OrderContext';
 import { WishlistProvider } from './context/WishlistContext'; // Add this import
+import WhatsAppChatWidget from './components/WhatsAppChatWidget';
 
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
@@ -43,7 +44,6 @@ import MyOrders from './Pages/MyOrders';
 import ReturnOrderForm from './Pages/ReturnOrderForm'; 
 import Oldee from './Pages/Oldee';
 import WishlistPage from './Pages/WishlistPage';
-
 
 const App = () => {
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -118,8 +118,8 @@ const App = () => {
 
                         <Route path="/wishlist" element={<WishlistPage />} />
                         <Route path="*" element={<NotFound />} />
-                        
                       </Routes>
+                      <WhatsAppChatWidget/>
                     </main>
 
                     <Footer />

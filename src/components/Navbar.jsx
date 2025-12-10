@@ -527,38 +527,32 @@ const Navbar = () => {
       <UploadProgress />
       
       {/* Top Header - HEIGHT REDUCED */}
- <div className="w-full transition-all duration-500 bg-gradient-to-r from-blue-900 to-purple-600">
-  <div className="flex justify-between items-center">
+      <div className="w-full transition-all duration-500 bg-gradient-to-r from-blue-900 to-purple-600">
+        <div className="flex justify-between items-center">
 
-    {/* Logo and Brand */}
-    <div className="flex items-center space-x-3">
-      <div className="relative transform transition-transform duration-300 hover:scale-110">
-        <img
-          src={logo}
-          alt="E-Mart Logo"
-          className="
-            w-24 h-24
-            sm:w-64 sm:h-24
-            object-contain
-            transition-all duration-300 
-            hover:brightness-110 hover:drop-shadow-lg 
-            cursor-pointer
-          "
-          onClick={() => navigate("/")}
-        />
-      </div>
-    </div>
+          {/* Logo and Brand */}
+          <div className="flex items-center space-x-3">
+            <div className="relative transform transition-transform duration-300 hover:scale-110">
+              <img
+                src={logo}
+                alt="E-Mart Logo"
+                className="
+                  w-24 h-24
+                  sm:w-64 sm:h-24
+                  object-contain
+                  transition-all duration-300 
+                  hover:brightness-110 hover:drop-shadow-lg 
+                  cursor-pointer
+                "
+                onClick={() => navigate("/")}
+              />
+            </div>
+          </div>
 
-    {/* Right icons */}
-    <div className="flex items-center space-x-4">
-      {/* icons here */}
-    </div>
-
-  
-
-          {/* Contact and Icons - Hidden on mobile */}
-          <div className="hidden md:flex items-center space-x-6">
-            <div className="flex space-x-3">
+          {/* Right icons */}
+          <div className="flex items-center space-x-4 pr-4">
+            {/* Contact and Icons - Hidden on mobile */}
+            <div className="hidden md:flex items-center space-x-3">
               {/* Home Button - UPDATED */}
               <button
                 onClick={(e) => {
@@ -586,6 +580,20 @@ const Navbar = () => {
                   />
                 </svg>
               </button>
+
+              {/* Wishlist Icon - Desktop */}
+              <Link
+                to="/wishlist"
+                className="w-7 h-7 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
+              >
+                <svg
+                  className="w-3.5 h-3.5 text-red-500"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                </svg>
+              </Link>
 
               {/* Login Button - Shows when user is NOT logged in */}
               {!user && (
@@ -656,17 +664,6 @@ const Navbar = () => {
                         >
                           📁 My Uploads
                         </button>
-                        
-                        {/* Liked Products Button - Desktop */}
-                        <button
-                          onClick={() => {
-                            setIsUserDropdownOpen(false);
-                            navigate("/wishlist");
-                          }}
-                          className="w-full px-6 py-3 text-left text-gray-700 hover:bg-gray-50 flex items-center text-base font-medium border-b border-gray-100"
-                        >
-                          💖 WishList
-                        </button>
                       </div>
 
                       {/* Logout */}
@@ -708,46 +705,24 @@ const Navbar = () => {
                 )}
               </button>
             </div>
-          </div>
 
-          {/* Mobile Contact - Visible only on mobile */}
-          <div className="md:hidden flex items-center space-x-2">
-            {/* Mobile Home Icon - UPDATED */}
-            <button
-              onClick={(e) => {
-                // If already on home page, scroll to top
-                if (location.pathname === "/") {
-                  e.preventDefault();
-                  window.scrollTo({ top: 0, behavior: "smooth" });
-                } else {
-                  navigate("/");
-                }
-              }}
-              className="w-7 h-7 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
-            >
-              <svg
-                className="w-3.5 h-3.5 text-orange-500"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
-                />
-              </svg>
-            </button>
-            
-            {/* Mobile Login/User Icon */}
-            {!user ? (
-              <Link
-                to="/login"
+            {/* Mobile Contact - Visible only on mobile */}
+            <div className="md:hidden flex items-center space-x-2">
+              {/* Mobile Home Icon - UPDATED */}
+              <button
+                onClick={(e) => {
+                  // If already on home page, scroll to top
+                  if (location.pathname === "/") {
+                    e.preventDefault();
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  } else {
+                    navigate("/");
+                  }
+                }}
                 className="w-7 h-7 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
               >
                 <svg
-                  className="w-3.5 h-3.5 text-purple-600"
+                  className="w-3.5 h-3.5 text-orange-500"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -756,65 +731,101 @@ const Navbar = () => {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
-                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                    d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
                   />
                 </svg>
+              </button>
+              
+              {/* Mobile Wishlist Icon */}
+              <Link
+                to="/wishlist"
+                className="w-7 h-7 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
+              >
+                <svg
+                  className="w-3.5 h-3.5 text-red-500"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                </svg>
               </Link>
-            ) : (
+              
+              {/* Mobile Login/User Icon */}
+              {!user ? (
+                <Link
+                  to="/login"
+                  className="w-7 h-7 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
+                >
+                  <svg
+                    className="w-3.5 h-3.5 text-purple-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                    />
+                  </svg>
+                </Link>
+              ) : (
+                <button
+                  onClick={() => setIsMenuOpen(true)}
+                  className="w-7 h-7 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
+                >
+                  <div className="w-4 h-4 bg-purple-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
+                    {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+                  </div>
+                </button>
+              )}
+              
+              {/* Mobile Cart Icon */}
+              <button
+                onClick={handleCartIconClick}
+                className="relative w-7 h-7 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
+              >
+                <svg
+                  className="w-3.5 h-3.5 text-orange-500"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M3 3h2l.4 2M7 13h10l4-8H5.4m0 0L7 13m0 0l-2.5 5M7 13l2.5 5m6-5v6a2 2 0 01-2 2H9a2 2 0 01-2-2v-6m8 0V9a2 2 0 00-2-2H9a2 2 0 00-2 2v4.01"
+                  />
+                </svg>
+                {cartItemsCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center font-bold">
+                    {cartItemsCount > 99 ? "99+" : cartItemsCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Mobile Menu Button */}
               <button
                 onClick={() => setIsMenuOpen(true)}
                 className="w-7 h-7 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
               >
-                <div className="w-4 h-4 bg-purple-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
-                  {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
-                </div>
+                <svg
+                  className="w-3.5 h-3.5 text-gray-700"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 6h16M4 12h16m-7 6h7"
+                  />
+                </svg>
               </button>
-            )}
-            
-            {/* Mobile Cart Icon */}
-            <button
-              onClick={handleCartIconClick}
-              className="relative w-7 h-7 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
-            >
-              <svg
-                className="w-3.5 h-3.5 text-orange-500"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M3 3h2l.4 2M7 13h10l4-8H5.4m0 0L7 13m0 0l-2.5 5M7 13l2.5 5m6-5v6a2 2 0 01-2 2H9a2 2 0 01-2-2v-6m8 0V9a2 2 0 00-2-2H9a2 2 0 00-2 2v4.01"
-                />
-              </svg>
-              {cartItemsCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center font-bold">
-                  {cartItemsCount > 99 ? "99+" : cartItemsCount}
-                </span>
-              )}
-            </button>
-
-            {/* Mobile Menu Button */}
-            <button
-              onClick={() => setIsMenuOpen(true)}
-              className="w-7 h-7 border border-purple-300 rounded-full flex items-center justify-center bg-white hover:bg-gray-50 transition duration-200"
-            >
-              <svg
-                className="w-3.5 h-3.5 text-gray-700"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 6h16M4 12h16m-7 6h7"
-                />
-              </svg>
-            </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1098,13 +1109,13 @@ const Navbar = () => {
                       📁 My Uploads
                     </button>
                     
-                    {/* Liked Products Button - Mobile */}
+                    {/* WishList Button - Mobile */}
                     <Link
                       to="/wishlist"
                       onClick={() => setIsMenuOpen(false)}
                       className="text-sm font-medium text-pink-600 hover:text-pink-500 flex items-center"
                     >
-                      💖 Liked Products
+                      💖 WishList
                     </Link>
                   </>
                 )}
