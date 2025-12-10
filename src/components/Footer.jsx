@@ -1,9 +1,18 @@
 import React from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import logo from '../assets/printo.png'
 import { FaTwitter, FaPinterestP, FaInstagram } from 'react-icons/fa' // Importing icons for social media
 
 const Footer = () => {
+  // Function to scroll to top when clicking on footer links
+  const scrollToTop = () => {
+    window.scrollTo({
+      top: 0,
+      left: 0,
+      behavior: 'instant' // Use 'smooth' for smooth scrolling animation
+    });
+  };
+
   // The background color is set to the custom RGB value: bg-[rgb(35,25,85)]
   return (
     <footer className="bg-[rgb(35,25,85)] text-white">
@@ -45,12 +54,12 @@ const Footer = () => {
           <div>
             <h3 className="text-base font-semibold mb-2">Quick Links</h3> {/* Reduced text-lg to text-base and mb-3 to mb-2 */}
             <ul className="space-y-1 text-xs"> {/* Reduced space-y-2 to space-y-1 and text-sm to text-xs */}
-              <li><Link to="/" className="text-gray-400 hover:text-white transition hover:translate-x-1 duration-300 inline-block">Home</Link></li>
-              <li><Link to="/e-store" className="text-gray-400 hover:text-white transition hover:translate-x-1 duration-300 inline-block">E-Store</Link></li>
-              <li><Link to="/local-market" className="text-gray-400 hover:text-white transition hover:translate-x-1 duration-300 inline-block">Local Market</Link></li>
-              <li><Link to="/printing" className="text-gray-400 hover:text-white transition hover:translate-x-1 duration-300 inline-block">Printing</Link></li>
-              <li><Link to="/market-news" className="text-gray-400 hover:text-white transition hover:translate-x-1 duration-300 inline-block">Market News</Link></li>
-              <li><Link to="/oldee" className="text-gray-400 hover:text-white transition hover:translate-x-1 duration-300 inline-block">Oldee</Link></li>
+              <li><Link to="/" onClick={scrollToTop} className="text-gray-400 hover:text-white transition hover:translate-x-1 duration-300 inline-block">Home</Link></li>
+              <li><Link to="/e-market" onClick={scrollToTop} className="text-gray-400 hover:text-white transition hover:translate-x-1 duration-300 inline-block">E-Store</Link></li>
+              <li><Link to="/local-market" onClick={scrollToTop} className="text-gray-400 hover:text-white transition hover:translate-x-1 duration-300 inline-block">Local Market</Link></li>
+              <li><Link to="/printing" onClick={scrollToTop} className="text-gray-400 hover:text-white transition hover:translate-x-1 duration-300 inline-block">Printing</Link></li>
+              <li><Link to="/news-today" onClick={scrollToTop} className="text-gray-400 hover:text-white transition hover:translate-x-1 duration-300 inline-block">Market News</Link></li>
+              <li><Link to="/oldee" onClick={scrollToTop} className="text-gray-400 hover:text-white transition hover:translate-x-1 duration-300 inline-block">Oldee</Link></li>
             </ul>
           </div>
           
@@ -58,11 +67,11 @@ const Footer = () => {
           <div>
             <h3 className="text-base font-semibold mb-2">Useful Links</h3> {/* Reduced text-lg to text-base and mb-3 to mb-2 */}
             <ul className="space-y-1 text-xs"> {/* Reduced space-y-2 to space-y-1 and text-sm to text-xs */}
-              <li><Link to="/return-policy" className="text-gray-400 hover:text-white transition hover:translate-x-1 duration-300 inline-block">Return Policy</Link></li>
-              <li><Link to="/shipping-policy" className="text-gray-400 hover:text-white transition hover:translate-x-1 duration-300 inline-block">Shipping Policy</Link></li>
-              <li><Link to="/terms-conditions" className="text-gray-400 hover:text-white transition hover:translate-x-1 duration-300 inline-block">Terms &amp; Conditions</Link></li>
-              <li><Link to="/chat-with-us" className="text-gray-400 hover:text-white transition hover:translate-x-1 duration-300 inline-block">Chat With Us</Link></li>
-              <li><Link to="/faqs" className="text-gray-400 hover:text-white transition hover:translate-x-1 duration-300 inline-block">FAQs</Link></li>
+              <li><Link to="/return-policy" onClick={scrollToTop} className="text-gray-400 hover:text-white transition hover:translate-x-1 duration-300 inline-block">Return Policy</Link></li>
+              <li><Link to="/shipping-policy" onClick={scrollToTop} className="text-gray-400 hover:text-white transition hover:translate-x-1 duration-300 inline-block">Shipping Policy</Link></li>
+              <li><Link to="/terms-conditions" onClick={scrollToTop} className="text-gray-400 hover:text-white transition hover:translate-x-1 duration-300 inline-block">Terms &amp; Conditions</Link></li>
+              <li><Link to="/chat-with-us" onClick={scrollToTop} className="text-gray-400 hover:text-white transition hover:translate-x-1 duration-300 inline-block">Chat With Us</Link></li>
+              <li><Link to="/faqs" onClick={scrollToTop} className="text-gray-400 hover:text-white transition hover:translate-x-1 duration-300 inline-block">FAQs</Link></li>
             </ul>
           </div>
 

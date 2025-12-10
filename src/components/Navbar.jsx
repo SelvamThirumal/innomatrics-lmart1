@@ -527,19 +527,34 @@ const Navbar = () => {
       <UploadProgress />
       
       {/* Top Header - HEIGHT REDUCED */}
-      <div className="container-responsive transition-all duration-500 bg-gradient-to-r from-blue-900 to-purple-600 py-0.5">
-        <div className="flex justify-between items-center">
-          {/* Logo and Brand */}
-          <div className="flex items-center space-x-3">
-            <div className="relative transform transition-transform duration-300 hover:scale-110">
-              <img
-                src={logo}
-                alt="E-Mart Logo"
-                className="w-12 h-12 sm:w-48 sm:h-16 object-contain transition-all duration-300 hover:brightness-110 hover:drop-shadow-lg cursor-pointer"
-                onClick={() => navigate("/")}
-              />
-            </div>
-          </div>
+ <div className="w-full transition-all duration-500 bg-gradient-to-r from-blue-900 to-purple-600">
+  <div className="flex justify-between items-center">
+
+    {/* Logo and Brand */}
+    <div className="flex items-center space-x-3">
+      <div className="relative transform transition-transform duration-300 hover:scale-110">
+        <img
+          src={logo}
+          alt="E-Mart Logo"
+          className="
+            w-24 h-24
+            sm:w-64 sm:h-24
+            object-contain
+            transition-all duration-300 
+            hover:brightness-110 hover:drop-shadow-lg 
+            cursor-pointer
+          "
+          onClick={() => navigate("/")}
+        />
+      </div>
+    </div>
+
+    {/* Right icons */}
+    <div className="flex items-center space-x-4">
+      {/* icons here */}
+    </div>
+
+  
 
           {/* Contact and Icons - Hidden on mobile */}
           <div className="hidden md:flex items-center space-x-6">

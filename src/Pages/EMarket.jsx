@@ -104,17 +104,28 @@ const ToastNotification = ({ message, type = "success", onClose }) => {
 };
 
 // ---------------- PRODUCT CARD COMPONENT ----------------
-const ProductCard = ({ product, addToCart, getQuantity, updateQuantity, navigate, onToggleWishlist }) => {
+const ProductCard = ({ product, addToCart, getQuantity, updateQuantity, navigate, onToggleWishlist, currentPath }) => {
   const qty = getQuantity(product.id);
   const { finalPrice, original, discount } = getPriceData(product);
   const rating = product.rating || 4.3;
   
-  // ❤️ Use Wishlist Context
-  const { toggleWishlist, isProductInWishlist } = useWishlist();
+  // ❤️ Use Wishlist Context and extract authUser state
+  const { toggleWishlist, isProductInWishlist, authUser } = useWishlist();
   const inWishlist = isProductInWishlist(product.id);
 
   const handleWishlistToggle = (e) => {
     e.stopPropagation();
+    
+    // ⭐ FIX: Check if user is logged in
+    if (!authUser) {
+      // Redirect to login page, saving the current page path in state
+      navigate('/login', { 
+        state: { from: currentPath } 
+      });
+      return; // Stop execution here
+    }
+
+    // ⭐ If logged in, proceed with the wishlist action
     toggleWishlist(product);
     if (onToggleWishlist) {
       const message = inWishlist 
@@ -582,6 +593,7 @@ const EMarket = () => {
                     getQuantity={getQuantity}
                     navigate={navigate}
                     onToggleWishlist={handleWishlistNotification}
+                    currentPath={location.pathname} // Passing the current pathname
                   />
                 ))}
               </div>

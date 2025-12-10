@@ -525,7 +525,7 @@ const Checkout = () => {
     setErrors({ form: "", customization: "", payment: "" });
   };
 
-  // 🔥 UPDATED: Save Order to Firebase with Seller Info
+  // 🔥 UPDATED: Save Order to Firebase with Seller Info (Seller Order Write Logic Removed)
   const saveOrderToFirebase = async (data, userId) => {
     try {
       const ordersCollectionRef = collection(db, "users", userId, "orders"); 
@@ -551,7 +551,7 @@ const Checkout = () => {
         };
       });
 
-      // 🔥 COLLECT UNIQUE SELLER IDs & NAMES
+      // 🔥 COLLECT UNIQUE SELLER IDS & NAMES
       const sellerIds = [...new Set(orderItems.map(i => i.sellerId).filter(id => id))];
       const sellerNames = [...new Set(orderItems.map(i => i.sellerName).filter(name => name))];
 
@@ -588,46 +588,8 @@ const Checkout = () => {
         isMultiSeller: sellerIds.length > 1
       });
       
-      // 🔥 UPDATE SELLER'S ORDERS (Optional - if you have seller collections)
-      // You can add logic here to also save order to seller's collection
-      if (sellerIds.length > 0) {
-        try {
-          // Example: Save to each seller's orders collection
-          for (const sellerId of sellerIds) {
-            if (sellerId) {
-              // Filter items for this specific seller
-              const sellerItems = orderItems.filter(item => item.sellerId === sellerId);
-              
-              // Create seller order document
-              const sellerOrderRef = collection(db, "sellers", sellerId, "orders");
-              const sellerOrderData = {
-                orderId: orderId,
-                customerId: userId,
-                customerInfo: {
-                  name: form.name,
-                  email: form.email,
-                  phone: form.phone,
-                  address: form.address,
-                  city: form.city,
-                  pincode: form.pincode
-                },
-                items: sellerItems,
-                total: sellerItems.reduce((sum, item) => sum + (item.price * item.quantity), 0),
-                paymentMethod: data.paymentMethod,
-                status: data.status,
-                createdAt: serverTimestamp()
-              };
-              
-              await addDoc(sellerOrderRef, sellerOrderData);
-              console.log(`✅ Order saved for seller: ${sellerId}`);
-            }
-          }
-        } catch (sellerError) {
-          console.warn("⚠️ Could not save to seller collections:", sellerError);
-          // Non-critical error - order is still saved in customer's collection
-        }
-      }
-
+      // 🔥 THE BLOCK THAT USED TO WRITE TO THE SELLERS COLLECTION HAS BEEN REMOVED HERE.
+      
       // Prepare order data for email
       const orderDataForEmail = {
         ...data,

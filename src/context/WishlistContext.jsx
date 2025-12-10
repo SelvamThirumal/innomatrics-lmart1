@@ -8,124 +8,92 @@ const WishlistContext = createContext();
 export const WishlistProvider = ({ children }) => {
   const auth = getAuth();
 
-  const [authUser, setAuthUser] = useState(null);        // Firebase logged user
-  const [customerId, setCustomerId] = useState(null);    // Dynamic fetched ID
+  const [authUser, setAuthUser] = useState(null);
   const [wishlist, setWishlist] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  /* -----------------------------------------------------
-      STEP 1: Detect logged in Firebase Auth user
-  ----------------------------------------------------- */
+  // Listen for auth state changes
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setAuthUser(user);
-      console.log("AUTH USER:", user?.uid);
+
+      if (user) {
+        // User is logged in - load their wishlist
+        try {
+          const userDocRef = doc(db, "users", user.uid);
+          const userDoc = await getDoc(userDocRef);
+          
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            setWishlist(userData.wishlist || []);
+          } else {
+            // Create user document if it doesn't exist
+            await setDoc(userDocRef, { wishlist: [] });
+            setWishlist([]);
+          }
+        } catch (error) {
+          console.error("Error loading wishlist:", error);
+          setWishlist([]);
+        }
+      } else {
+        // User is logged out - clear wishlist
+        setWishlist([]);
+      }
+      
+      setLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
 
-
-  /* -----------------------------------------------------
-      STEP 2: Fetch customerId from Firestore dynamically
-      /users/{authUser.uid}
-  ----------------------------------------------------- */
+  // Save wishlist to Firestore whenever it changes
   useEffect(() => {
-    if (!authUser) {
-      setCustomerId(null);
-      return;
-    }
+    if (!authUser || loading) return;
 
-    const fetchCustomerId = async () => {
+    const saveWishlist = async () => {
       try {
-        const ref = doc(db, "users", authUser.uid);
-        const snap = await getDoc(ref);
-
-        if (snap.exists()) {
-          const data = snap.data();
-          console.log("Dynamic customerId:", data.customerId);
-
-          setCustomerId(data.customerId); 
-        } else {
-          console.warn("User Firestore doc missing");
-        }
-      } catch (err) {
-        console.error("Error fetching customerId", err);
+        const userDocRef = doc(db, "users", authUser.uid);
+        await setDoc(userDocRef, { wishlist }, { merge: true });
+      } catch (error) {
+        console.error("Error saving wishlist:", error);
       }
     };
 
-    fetchCustomerId();
-  }, [authUser]);
+    saveWishlist();
+  }, [wishlist, authUser, loading]);
 
-
-  /* -----------------------------------------------------
-      STEP 3: Load wishlist AFTER customerId is ready
-      (Fix refresh issue!)
-  ----------------------------------------------------- */
-  useEffect(() => {
-    if (!customerId) {
-      console.log("Waiting for customerId...");
-      return; // ❗ DO NOT LOAD empty wishlist
-    }
-
-    const loadWishlist = async () => {
-      try {
-        const ref = doc(db, "users", customerId);
-        const snap = await getDoc(ref);
-
-        if (snap.exists()) {
-          const list = snap.data().wishlist || [];
-          console.log("Loaded wishlist:", list);
-
-          setWishlist(list);
-        } else {
-          setWishlist([]);
-        }
-      } catch (err) {
-        console.error("Error loading wishlist", err);
-      }
-
-      setLoading(false);
-    };
-
-    loadWishlist();
-  }, [customerId]);
-
-
-  /* -----------------------------------------------------
-      STEP 4: Save wishlist to Firestore
-  ----------------------------------------------------- */
-  const saveWishlist = async (list) => {
-    if (!customerId) return;
-
-    try {
-      const ref = doc(db, "users", customerId);
-      await setDoc(ref, { wishlist: list }, { merge: true });
-      console.log("Wishlist saved:", list);
-    } catch (err) {
-      console.error("Error saving wishlist", err);
-    }
-  };
-
-
-  /* -----------------------------------------------------
-      LIKE / UNLIKE PRODUCT
-  ----------------------------------------------------- */
+  // Toggle wishlist function
   const toggleWishlist = (product) => {
-    setWishlist((prev) => {
-      const exists = prev.some((p) => p.id === product.id);
-      const updated = exists
-        ? prev.filter((p) => p.id !== product.id)
-        : [...prev, product];
+    if (!authUser) {
+      return false; // User not logged in
+    }
 
-      saveWishlist(updated);
-      return updated;
+    setWishlist((prevWishlist) => {
+      const isAlreadyInWishlist = prevWishlist.some(item => item.id === product.id);
+      
+      if (isAlreadyInWishlist) {
+        // Remove from wishlist
+        return prevWishlist.filter(item => item.id !== product.id);
+      } else {
+        // Add to wishlist
+        return [...prevWishlist, {
+          id: product.id,
+          name: product.name,
+          price: product.price || product.finalPrice || 0,
+          image: product.image,
+          originalPrice: product.originalPrice,
+          discount: product.discount,
+          rating: product.rating
+        }];
+      }
     });
+    
+    return true;
   };
 
-  const isProductInWishlist = (id) =>
-    wishlist.some((p) => p.id === id);
-
+  const isProductInWishlist = (productId) => {
+    return authUser ? wishlist.some(item => item.id === productId) : false;
+  };
 
   return (
     <WishlistContext.Provider
@@ -133,7 +101,8 @@ export const WishlistProvider = ({ children }) => {
         wishlist,
         toggleWishlist,
         isProductInWishlist,
-        loading
+        loading,
+        authUser,
       }}
     >
       {children}

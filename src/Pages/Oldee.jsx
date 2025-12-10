@@ -20,14 +20,12 @@ import { db, storage, auth } from "../../firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import OldeeProductDetails from "./OldeeProductDetails";
 
-/* ------------ constants ------------- */
 const MAX_FILES = 5;
 const MAX_MB = 5;
 const CUSTOMER_COLLECTION = "customers";
 const USERS_COLLECTION_MIRROR = "users";
 const COLLECTION = "oldee";
 
-// ✅ Add your admin emails here
 const ADMIN_EMAILS = ["admin@example.com", "iammoulahussain@gmail.com"];
 
 const SellProductForm = ({
@@ -35,7 +33,7 @@ const SellProductForm = ({
   onCancel,
   onSave,
   initialSummaryOpen = false,
-  editDoc = null, // { id, ...fields } when editing
+  editDoc = null, 
 }) => {
   const isEdit = !!editDoc;
 
@@ -52,8 +50,8 @@ const SellProductForm = ({
     negotiation: editDoc?.negotiation || "flexible",
   });
 
-  const [images, setImages] = useState([]); // new files
-  const [existingImages, setExistingImages] = useState(editDoc?.imageURLs || []); // urls
+  const [images, setImages] = useState([]); 
+  const [existingImages, setExistingImages] = useState(editDoc?.imageURLs || []); 
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSummaryPanelOpen, setIsSummaryPanelOpen] = useState(initialSummaryOpen);
@@ -89,7 +87,6 @@ const SellProductForm = ({
       }
     };
     prefill();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const handleChange = (e) => {
@@ -123,22 +120,20 @@ const SellProductForm = ({
   // 🚩 NEW HANDLER: Set an image URL as primary (move to start)
   const setAsPrimary = (url, isExisting = true) => {
     if (isExisting) {
-        const temp = [...existingImages];
-        const index = temp.indexOf(url);
-        if (index > -1) {
-            const [moved] = temp.splice(index, 1);
-            setExistingImages([moved, ...temp]);
-        }
+      const temp = [...existingImages];
+      const index = temp.indexOf(url);
+      if (index > -1) {
+        const [moved] = temp.splice(index, 1);
+        setExistingImages([moved, ...temp]);
+      }
     } else {
-        const temp = [...images];
-        const index = temp.findIndex(img => img.preview === url);
-        if (index > -1) {
-            const [moved] = temp.splice(index, 1);
-            // Move it to the start of new images, but this should only happen if there are no existing images left
-            // For simplicity and user expectation, let's move it to the start of the `images` array.
-            const [movedNew] = temp.splice(index, 1);
-            setImages([movedNew, ...temp]);
-        }
+      const temp = [...images];
+      const index = temp.findIndex(img => img.preview === url);
+      if (index > -1) {
+        const [moved] = temp.splice(index, 1);
+        const [movedNew] = temp.splice(index, 1);
+        setImages([movedNew, ...temp]);
+      }
     }
   };
 
@@ -220,7 +215,6 @@ const SellProductForm = ({
         savedAt: serverTimestamp(),
       };
 
-      // Upload NEW images
       const newUrls = [];
       for (let i = 0; i < images.length; i++) {
         const img = images[i];
@@ -234,7 +228,6 @@ const SellProductForm = ({
         setUploadProgress(Math.round(((i + 1) / images.length) * 100));
       }
 
-      // The key change: finalURLs array order is what determines the primary image
       const finalURLs = [...existingImages, ...newUrls];
 
       if (isEdit) {
@@ -249,7 +242,6 @@ const SellProductForm = ({
           imageURLs: finalURLs,
           sellerId: user.uid,
           seller: sellerSnapshot,
-          // keep previous approval unless admin toggles elsewhere
           approved: editDoc.approved ?? false,
           status: editDoc.status || (editDoc.approved ? "active" : "pending"),
           marketplace: "oldee",
@@ -267,7 +259,6 @@ const SellProductForm = ({
           createdAt: serverTimestamp(),
           sellerId: user.uid,
           seller: sellerSnapshot,
-          // ⛳ new items start pending/unapproved
           approved: false,
           status: "pending",
           marketplace: "oldee",
@@ -313,11 +304,11 @@ const SellProductForm = ({
   const offerPriceNum = formData.offerPrice !== "" ? Number(formData.offerPrice) : null;
   const hasDiscount = offerPriceNum !== null && offerPriceNum < priceNum;
   const discountPct = hasDiscount ? Math.round(((priceNum - offerPriceNum) / priceNum) * 100) : 0;
-  
+
   // Combine all images for Step 2 display
   const allImages = [
-      ...existingImages.map(url => ({ url, isExisting: true, isPrimary: url === existingImages[0] })),
-      ...images.map(img => ({ url: img.preview, isExisting: false, isPrimary: existingImages.length === 0 && img.preview === images[0]?.preview })),
+    ...existingImages.map(url => ({ url, isExisting: true, isPrimary: url === existingImages[0] })),
+    ...images.map(img => ({ url: img.preview, isExisting: false, isPrimary: existingImages.length === 0 && img.preview === images[0]?.preview })),
   ];
   const totalImageCount = existingImages.length + images.length;
   const showPrimaryButton = totalImageCount > 1;
@@ -334,9 +325,8 @@ const SellProductForm = ({
           <button
             type="button"
             onClick={() => setIsSummaryPanelOpen((p) => !p)}
-            className={`relative w-10 h-10 rounded-full shadow-md transition-all duration-300 ${
-              isSummaryPanelOpen ? "bg-red-500 hover:bg-red-600" : "bg-blue-500 hover:bg-blue-600"
-            } text-white flex items-center justify-center -mt-2`}
+            className={`relative w-10 h-10 rounded-full shadow-md transition-all duration-300 ${isSummaryPanelOpen ? "bg-red-500 hover:bg-red-600" : "bg-blue-500 hover:bg-blue-600"
+              } text-white flex items-center justify-center -mt-2`}
             title={isSummaryPanelOpen ? "Close Summary" : "View Listing Summary"}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -374,9 +364,8 @@ const SellProductForm = ({
           </div>
           {steps.map((s) => (
             <div key={s.number} className="flex flex-col items-center">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                step >= s.number ? "bg-blue-500 text-white" : "bg-gray-200 text-gray-500"
-              }`}>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${step >= s.number ? "bg-blue-500 text-white" : "bg-gray-200 text-gray-500"
+                }`}>
                 {s.number}
               </div>
               <span className="text-xs mt-2 text-gray-600">{s.title}</span>
@@ -468,56 +457,56 @@ const SellProductForm = ({
                   <label className="block text-left text-sm font-semibold text-gray-800 mb-1">
                     Images (Max {MAX_FILES})
                   </label>
-                  
+
                   {/* Image Gallery Display */}
                   {totalImageCount > 0 && (
-                      <div className="mb-4 p-4 border border-dashed border-blue-300 rounded-xl">
-                          <p className="text-sm font-medium text-gray-700 mb-3">
-                              Current Images ({totalImageCount}/{MAX_FILES})
-                          </p>
-                          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
-                              {allImages.map((img, idx) => (
-                                  <motion.div 
-                                      key={img.url + idx} 
-                                      initial={{ scale: 0.8, opacity: 0 }} 
-                                      animate={{ scale: 1, opacity: 1 }} 
-                                      exit={{ scale: 0.8, opacity: 0 }}
-                                      className="relative rounded-lg overflow-hidden border-2"
-                                      // 🚩 Added border to highlight primary image
-                                      style={{ borderColor: img.isPrimary ? '#3b82f6' : '#e5e7eb' }}
-                                  >
-                                      <img src={img.url} alt={`Product ${idx + 1}`} className="w-full h-20 object-cover" />
-                                      
-                                      {/* Primary Tag */}
-                                      {img.isPrimary ? (
-                                          <div className="absolute top-0 left-0 bg-blue-500 text-white text-xs font-bold px-2 py-0.5 rounded-br-lg">
-                                              Primary
-                                          </div>
-                                      ) : showPrimaryButton ? (
-                                          // Set as Primary Button
-                                          <button
-                                              type="button"
-                                              onClick={() => setAsPrimary(img.url, img.isExisting)}
-                                              className="absolute top-0 left-0 bg-black/50 text-white text-xs font-bold px-2 py-0.5 hover:bg-black/70 transition-colors"
-                                              title="Set as cover image"
-                                          >
-                                              Set Primary
-                                          </button>
-                                      ) : null}
+                    <div className="mb-4 p-4 border border-dashed border-blue-300 rounded-xl">
+                      <p className="text-sm font-medium text-gray-700 mb-3">
+                        Current Images ({totalImageCount}/{MAX_FILES})
+                      </p>
+                      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+                        {allImages.map((img, idx) => (
+                          <motion.div
+                            key={img.url + idx}
+                            initial={{ scale: 0.8, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.8, opacity: 0 }}
+                            className="relative rounded-lg overflow-hidden border-2"
+                            // 🚩 Added border to highlight primary image
+                            style={{ borderColor: img.isPrimary ? '#3b82f6' : '#e5e7eb' }}
+                          >
+                            <img src={img.url} alt={`Product ${idx + 1}`} className="w-full h-20 object-cover" />
 
-                                      {/* Remove Button */}
-                                      <button
-                                          type="button"
-                                          onClick={() => img.isExisting ? removeExistingImage(img.url) : removeNewImage(images.findIndex(i => i.preview === img.url))}
-                                          className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-xs font-bold flex items-center justify-center shadow-md hover:bg-red-600"
-                                          title="Remove"
-                                      >
-                                          ×
-                                      </button>
-                                  </motion.div>
-                              ))}
-                          </div>
+                            {/* Primary Tag */}
+                            {img.isPrimary ? (
+                              <div className="absolute top-0 left-0 bg-blue-500 text-white text-xs font-bold px-2 py-0.5 rounded-br-lg">
+                                Primary
+                              </div>
+                            ) : showPrimaryButton ? (
+                              // Set as Primary Button
+                              <button
+                                type="button"
+                                onClick={() => setAsPrimary(img.url, img.isExisting)}
+                                className="absolute top-0 left-0 bg-black/50 text-white text-xs font-bold px-2 py-0.5 hover:bg-black/70 transition-colors"
+                                title="Set as cover image"
+                              >
+                                Set Primary
+                              </button>
+                            ) : null}
+
+                            {/* Remove Button */}
+                            <button
+                              type="button"
+                              onClick={() => img.isExisting ? removeExistingImage(img.url) : removeNewImage(images.findIndex(i => i.preview === img.url))}
+                              className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-xs font-bold flex items-center justify-center shadow-md hover:bg-red-600"
+                              title="Remove"
+                            >
+                              ×
+                            </button>
+                          </motion.div>
+                        ))}
                       </div>
+                    </div>
                   )}
 
                   {/* Upload Dropzone */}
@@ -541,7 +530,7 @@ const SellProductForm = ({
                           </svg>
                         </div>
                         <p className="text-sm text-gray-600 mb-1">
-                            Click to upload {MAX_FILES - totalImageCount} more images
+                          Click to upload {MAX_FILES - totalImageCount} more images
                         </p>
                         <p className="text-xs text-gray-400">PNG, JPG, WEBP up to {MAX_MB}MB each</p>
                       </label>
@@ -557,9 +546,8 @@ const SellProductForm = ({
                           key={option}
                           type="button"
                           onClick={() => setFormData((p) => ({ ...p, negotiation: option }))}
-                          className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors duration-200 ${
-                            formData.negotiation === option ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                          }`}
+                          className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors duration-200 ${formData.negotiation === option ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                            }`}
                         >
                           {option.charAt(0).toUpperCase() + option.slice(1)}
                         </button>
@@ -667,19 +655,19 @@ const ProductsViewer = ({ user, isAdmin, onClose, onEdit }) => {
     setLoading(true);
     // 🚩 ADDED: Exit early if no user is available
     if (!user) {
-        setLoading(false);
-        return;
+      setLoading(false);
+      return;
     }
     try {
       // Logic: If admin, show all products. If not admin, show only products where sellerId matches user.uid.
       const qRef = isAdmin
         ? query(collection(db, COLLECTION), orderBy("createdAt", "desc"), fbLimit(50))
         : query(
-            collection(db, COLLECTION),
-            where("sellerId", "==", user?.uid || "__"), // This filters the products to match the logged-in customer's ID
-            orderBy("createdAt", "desc"),
-            fbLimit(50)
-          );
+          collection(db, COLLECTION),
+          where("sellerId", "==", user?.uid || "__"), // This filters the products to match the logged-in customer's ID
+          orderBy("createdAt", "desc"),
+          fbLimit(50)
+        );
       const snap = await getDocs(qRef);
       const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setItems(arr);
@@ -692,8 +680,6 @@ const ProductsViewer = ({ user, isAdmin, onClose, onEdit }) => {
 
   useEffect(() => {
     load();
-    // Re-run load when user/isAdmin changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, isAdmin]);
 
   const approveItem = async (id, approved) => {
@@ -737,13 +723,13 @@ const ProductsViewer = ({ user, isAdmin, onClose, onEdit }) => {
 
         {/* 🚩 ADDED: Display Login Required message if no user */}
         {!user ? (
-            <div className="bg-white p-8 rounded-2xl shadow-xl border border-red-300 w-full max-w-md mx-auto text-center mt-20">
-                <h3 className="text-xl font-bold text-red-600 mb-4">🔐 Login Required</h3>
-                <p className="text-gray-600 mb-6">Please log in or sign up to view your product listings.</p>
-                <button onClick={onClose} className="w-full bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl font-bold">
-                    Close Viewer
-                </button>
-            </div>
+          <div className="bg-white p-8 rounded-2xl shadow-xl border border-red-300 w-full max-w-md mx-auto text-center mt-20">
+            <h3 className="text-xl font-bold text-red-600 mb-4">🔐 Login Required</h3>
+            <p className="text-gray-600 mb-6">Please log in or sign up to view your product listings.</p>
+            <button onClick={onClose} className="w-full bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl font-bold">
+              Close Viewer
+            </button>
+          </div>
         ) : loading ? (
           <p className="text-sm text-gray-600">Loading…</p>
         ) : items.length === 0 ? (
@@ -787,20 +773,6 @@ const ProductsViewer = ({ user, isAdmin, onClose, onEdit }) => {
                     Delete
                   </button>
                 </div>
-
-                {isAdmin && (
-                  <div className="mt-2 flex gap-2">
-                    {p.approved ? (
-                      <button onClick={() => approveItem(p.id, false)} className="flex-1 py-2 rounded-lg border text-sm">
-                        Mark Pending
-                      </button>
-                    ) : (
-                      <button onClick={() => approveItem(p.id, true)} className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm">
-                        Approve
-                      </button>
-                    )}
-                  </div>
-                )}
               </div>
             ))}
           </div>
@@ -862,37 +834,31 @@ const Oldee = () => {
     }
   };
 
-  // 🚩 MODIFIED: Load approved items even when logged out.
-  // The list will reload when the user logs in/out due to the [currentUser] dependency.
   useEffect(() => {
     loadApproved();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser]);
 
   // --- Handlers ---
   const openCreate = () => {
-    // These guards prevent non-logged-in users from opening the modal directly
     if (!currentUser) {
       return;
     }
     setEditingDoc(null);
-    setSelectedProduct(null); // Close details if open
+    setSelectedProduct(null);
     setShowUpload(true);
   };
 
   const openViewer = () => {
-    // These guards prevent non-logged-in users from opening the modal directly
     if (!currentUser) {
       return;
     }
-    setSelectedProduct(null); // Close details if open
+    setSelectedProduct(null);
     setShowViewer(true);
   }
 
   const handleSave = () => {
     setShowUpload(false);
     setEditingDoc(null);
-    // After create/update, refresh both lists
     loadApproved();
   };
 
@@ -930,20 +896,15 @@ const Oldee = () => {
         onEdit={
           currentUser?.uid === selectedProduct.sellerId || isAdmin
             ? (p) => {
-                closeProductDetails(); // Close details view
-                setEditingDoc(p);
-                setShowUpload(true);
-              }
+              closeProductDetails(); // Close details view
+              setEditingDoc(p);
+              setShowUpload(true);
+            }
             : null
         }
       />
     );
   }
-
-  // 🚩 REMOVED: Full "Access Restricted" block. Marketplace is now public.
-
-
-  // --- Main Marketplace View (Always shown, buttons are conditional) ---
   return (
     <div className="min-h-screen bg-gray-50 relative">
       {/* Top-right corner buttons */}

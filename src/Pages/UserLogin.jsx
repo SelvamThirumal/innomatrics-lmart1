@@ -8,7 +8,7 @@ import { doc, getDoc } from "firebase/firestore";
 const storeUserData = (userData, uid) => {
   localStorage.setItem("userData", JSON.stringify(userData));
   localStorage.setItem("user", JSON.stringify(userData));
-  // 🔑 This line stores the Firebase User UID as 'token'
+  // 🔑 Stores the Firebase User UID as 'token' 
   localStorage.setItem("token", uid); 
   localStorage.setItem("isLoggedIn", "true");
 };
