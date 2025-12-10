@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { CartProvider } from './context/CartContext';
 import { OrderProvider } from './context/OrderContext';
-import { WishlistProvider } from './context/WishlistContext'; // Add this import
+import { WishlistProvider } from './context/WishlistContext';
 import WhatsAppChatWidget from './components/WhatsAppChatWidget';
 
 import Navbar from './components/Navbar';
@@ -64,7 +64,7 @@ const App = () => {
   return (
     <OrderProvider>
       <CartProvider>
-        <WishlistProvider> {/* Wrap with WishlistProvider */}
+        <WishlistProvider>
           <Router>
             <Routes>
               {/* ADMIN ROUTES */}
@@ -128,7 +128,7 @@ const App = () => {
               />
             </Routes>
           </Router>
-        </WishlistProvider> {/* Close WishlistProvider */}
+        </WishlistProvider>
       </CartProvider>
     </OrderProvider>
   );

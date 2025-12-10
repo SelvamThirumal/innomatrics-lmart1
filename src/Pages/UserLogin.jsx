@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { auth, db } from "../../firebase.js";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
@@ -15,6 +15,7 @@ const storeUserData = (userData, uid) => {
 
 const UserLogin = () => {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [formData, setFormData] = useState({
     email: "",
@@ -23,13 +24,11 @@ const UserLogin = () => {
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-  // 1. New state for password visibility
-  const [showPassword, setShowPassword] = useState(false); 
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleChange = (e) =>
     setFormData({ ...formData, [e.target.name]: e.target.value });
 
-  // 2. Function to toggle password visibility
   const togglePasswordVisibility = () => {
     setShowPassword(!showPassword);
   };
@@ -59,8 +58,16 @@ const UserLogin = () => {
         // Store user data in localStorage
         storeUserData(userData, user.uid);
         
-        // Navigate to home page
-        navigate("/");
+        // ⭐ Check if coming from wishlist button click
+        const { state } = location;
+        if (state?.wishlistRedirect) {
+          // Redirect to wishlist page after successful login
+          navigate('/wishlist');
+        } else {
+          // Otherwise, redirect to home or previous page
+          const from = state?.from || '/';
+          navigate(from);
+        }
       } else {
         setError("User data not found. Please contact support.");
       }
@@ -128,27 +135,22 @@ const UserLogin = () => {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Password
               </label>
-              {/* Use relative positioning for the icon */}
-              <div className="relative"> 
+              <div className="relative">
                 <input
-                  // 3. Toggle input type between 'password' and 'text'
-                  type={showPassword ? "text" : "password"} 
+                  type={showPassword ? "text" : "password"}
                   name="password"
                   required
                   value={formData.password}
                   onChange={handleChange}
-                  // Add pr-12 to make space for the button
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 pr-12" 
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 pr-12"
                   placeholder="Enter your password"
                 />
                 <button
                   type="button"
                   onClick={togglePasswordVisibility}
-                  // Position the button absolutely inside the div
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-xl leading-5 text-gray-600" 
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-xl leading-5 text-gray-600"
                 >
-                  {/* 4. Toggle emoji icon based on state */}
-                  {showPassword ? "👁️" : "🔒"} 
+                  {showPassword ? "👁️" : "🔒"}
                 </button>
               </div>
             </div>

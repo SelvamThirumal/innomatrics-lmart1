@@ -687,7 +687,7 @@ const Checkout = () => {
         key: "rzp_test_RD3J1sajzD89a8",
         amount: order.amount,
         currency: order.currency,
-        name: "Your Store Name",
+        name: "L-mart",
         description: "Order Payment",
         handler: async function (response) {
           setProcessingPayment(true);

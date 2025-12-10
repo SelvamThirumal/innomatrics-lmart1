@@ -15,7 +15,7 @@ const Footer = () => {
 
   // The background color is set to the custom RGB value: bg-[rgb(35,25,85)]
   return (
-    <footer className="bg-[rgb(35,25,85)] text-white">
+    <footer className="bg-[rgb(25,35,85)] text-white">
       {/* Reduced vertical padding (py-4) and horizontal padding (px-2 sm:px-4 lg:px-10) */}
       <div className="container-responsive py-4 px-2 sm:px-4 lg:px-10">
         
